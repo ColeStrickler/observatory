@@ -40,6 +40,27 @@ json eventparser::ParseFileParseEvent(Event<FileParseEvent>* fileParseEvent)
 		}
 	}
 
+	for (auto& s : pInfo.Strings)
+	{
+		bool insert = true;
+		if (s.size() >= 4)
+		{
+			for (auto& c : s)
+			{
+				if (c < 0x20 || c > 0x7E)
+				{
+					insert = false;
+					break;
+				}
+			}
+			if (insert)
+			{
+				retData["Strings"].push_back(s);
+			}
+			
+		}
+	}
+
 
 	if (pInfo.x86)
 	{

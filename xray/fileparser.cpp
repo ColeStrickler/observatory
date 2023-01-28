@@ -330,6 +330,97 @@ void staticparse::Pe_Parser::ParseImports()
 }
 
 
+void staticparse::Pe_Parser::ParseStrings()
+{
+	BYTE* file = Base;
+	DWORD size = ParsedInfo.FileSize;
+	printf("base: %llx\n", file);
+	printf("size = %d", size);
+
+
+	std::vector<std::string> strings;
+	std::vector<std::wstring> wstrings;
+
+	// Get ASCII strings
+	for (int i = 0; i < size; i++)
+	{
+
+		if (file[i] >= 0x21 && file[i] <= 0x7e)
+		{
+
+			int j = i + 1;
+			while (true)
+			{
+
+				if (file[j] >= 0x20 && file[j] <= 0x7e)
+				{
+					j++;
+				}
+				else {
+					break;
+				}
+
+
+			}
+			if (j >= 5)
+			{
+				std::string s = std::string((char*)(file + i), j - i);
+				if (s.size() >= 5)
+				{
+					ParsedInfo.Strings.push_back(s);
+				}
+
+				i = j;
+			}
+
+		}
+	}
+
+	// Get UNICODE strings
+	for (int i = 0; i < size; i++)
+	{
+
+		if (file[i] >= 0x21 && file[i] <= 0x7e)
+		{
+
+			int j = i + 2;
+			while (true)
+			{
+				if (file[j] >= 0x20 && file[j] <= 0x7e)
+				{
+
+					if (file[j + 1] == 0x00)
+					{
+						j += 2;
+					}
+					else {
+						break;
+					}
+				}
+				else {
+					break;
+				}
+
+
+			}
+			if (j >= 8)
+			{
+				std::wstring s = std::wstring((wchar_t*)(file + i), j - i);
+				if (s.size() >= 5)
+				{
+					ParsedInfo.Strings.push_back(WstringToString(s));
+				}
+
+				i = j;
+			}
+
+		}
+	}
+}
+
+
+
+
 staticparse::ExtractInfo staticparse::Pe_Parser::Parse()
 {
 	GetBasicFileInfo();
@@ -342,6 +433,7 @@ staticparse::ExtractInfo staticparse::Pe_Parser::Parse()
 		}
 	}
 	ParseImports();
+	ParseStrings();
 
 	
 

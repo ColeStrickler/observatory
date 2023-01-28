@@ -6,7 +6,8 @@
 #include <nlohmann/json.hpp>
 #include "raii.h"
 #include "const.h"
-#include <iostream>
+#include "helper.h"
+
 
 BYTE* getFileBase(const char* filePath, DWORD* _Out_ fileSize);
 
@@ -63,6 +64,7 @@ namespace staticparse
 		std::vector<std::string>								Exports;
 		std::vector<std::string>								Resources;
 		std::vector<Section>									Sections;
+		std::vector<std::string>								Strings;
 		std::vector<DWORD>										Errors;
 	};
 
@@ -87,6 +89,7 @@ namespace staticparse
 		void ParseExports();
 		void GetHashes(void* buf, DWORD size, Hash_Info* hash_struct);
 		void ParseSections();
+		void ParseStrings();
 
 	private:
 		BYTE* Base;

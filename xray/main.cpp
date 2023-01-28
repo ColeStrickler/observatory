@@ -6,6 +6,10 @@
 #include "raii.h"
 #include "fileparser.h"
 #include "zipClass.h"
+#include "manager.h"
+
+
+using namespace nlohmann;
 
 void test_pe_parser()
 {
@@ -51,8 +55,16 @@ void test_pe_parser()
 int main()
 {
 	
-	zip_manager z;
-	z.Unzip_Password_ProtectedFile((LPSTR)"C:\\Users\\Cole\\Documents\\putty.zip", (LPSTR)"putty.exe", nullptr, (LPSTR)"C:\\Users\\Cole\\Documents\\bigmeme.exe");
-	
+	//zip_manager z;
+	//z.Unzip_Password_ProtectedFile((LPSTR)"C:\\Users\\Cole\\Documents\\putty.zip", (LPSTR)"putty.exe", nullptr, (LPSTR)"C:\\Users\\Cole\\Documents\\bigmeme.exe");
+	staticparse::Pe_Parser parse("C:\\Users\\Cole\\Documents\\putty.exe");
 
+	parse.Parse();
+	staticparse::ExtractInfo exInfo = parse.ParsedInfo;
+	Event<FileParseEvent> fp;
+	fp.Entry = (PlEntry)&fp;
+	fp.Data.ParseInfo = exInfo;
+
+	json data = eventparser::ParseFileParseEvent(&fp);
+	std::cout << data.dump().c_str() << std::endl;
 }	
