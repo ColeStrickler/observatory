@@ -16,7 +16,6 @@ enum class EventType : short
 	RemoteThreadEvent,
 	RegistryEvent,
 	ObjectCallbackEvent,
-	EndSequence
 };
 
 
@@ -25,8 +24,6 @@ enum class FileEventType : short
 	Read,
 	Write
 };
-
-
 
 
 template<typename T>
