@@ -1,10 +1,42 @@
 #pragma once
-#include <Windows.h>
-#include "fileparser.h"
-#include "LinkedList.h"
-#include "kerneldef.h"
+#include <ntifs.h>
+#include <wdm.h>
+#include "KernelRaiiMgmt.h"
+#include <stdlib.h>
+
+// TYPEDEFS
+typedef unsigned long DWORD;
+#define DRIVER_TAG 'obsv'
 
 
+// STRUCTURES
+typedef struct Globals
+{
+	FastMutex					EventsMutex;
+	LIST_ENTRY					EventsHead;
+	int							EventCount;
+
+	FastMutex					MonitoredFilesMutex;
+	LIST_ENTRY					MonitoredFiles;
+	int							MonitoredFilesCount;
+
+}*PGlobals;
+
+typedef struct MonitoredFile
+{
+	LIST_ENTRY Entry;
+	UNICODE_STRING FilePath;
+}*PMonitoredFile;
+
+
+// FUNCTIONS
+void PushEvent(LIST_ENTRY* entry, LIST_ENTRY* ListHead, FastMutex& Mutex, int& count);
+void PushMonitoredFile(LIST_ENTRY* entry, LIST_ENTRY* ListHead, FastMutex& Mutex, int& count);
+void charToUnicodeString(char* text, UNICODE_STRING& outstring);
+
+
+
+// EVENT INFRASTRUCTURE
 enum class EventType : short
 {
 	FileParse,
@@ -31,7 +63,7 @@ enum class FileEventType : short
 template<typename T>
 struct Event
 {
-	lEntry Entry;
+	LIST_ENTRY Entry;
 	T Data;
 };
 
@@ -42,13 +74,10 @@ struct EventHeader
 	LARGE_INTEGER Timestamp;
 };
 
-struct FileParseEvent : EventHeader
-{
-	staticparse::ExtractInfo ParseInfo;
-};
+
 
 struct FileEvent : EventHeader
-{ 
+{
 	FileEventType Action;
 	DWORD OffsetPath;
 	DWORD PathLength;
@@ -118,3 +147,7 @@ struct ObjectCallbackEvent : EventHeader
 	DWORD HandleProcessNameLength;
 };
 
+
+
+// DRIVER CONTROL CODES
+#define DRIVER_IOCTL_CLEAR CTL_CODE(0x8000, 0x800, METHOD_NEITHER, FILE_ANY_ACCESS)

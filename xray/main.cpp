@@ -5,11 +5,18 @@
 
 #include "raii.h"
 #include "fileparser.h"
+#include "infrastructure.h"
 #include "zipClass.h"
 #include "manager.h"
-
-
 using namespace nlohmann;
+
+
+
+
+Globals g_Struct;
+
+
+
 
 void test_pe_parser()
 {

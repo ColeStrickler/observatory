@@ -1,282 +1,5 @@
 #include "manager.h"
 
-
-
-
-EventType eventparser::CheckType(PlEntry* Event)
-{
-	return *(EventType*)((UINT64)Event + sizeof(PlEntry));
-}
-
-
-
-json eventparser::ParseFileParseEvent(Event<FileParseEvent>* fileParseEvent)
-{
-	json retData;
-	auto& data = fileParseEvent->Data;
-	auto& pInfo = data.ParseInfo;
-
-	retData["File"] = pInfo.FileName;
-	retData["File Size"] = pInfo.FileSize;
-	retData["MD5"] = pInfo.HashInfo.MD5;
-	retData["SHA-1"] = pInfo.HashInfo.SHA1;
-	retData["SHA-256"] = pInfo.HashInfo.SHA256;
-	
-	for (auto& err : pInfo.Errors)
-	{
-		retData["Errors"].push_back(err);
-	}
-
-	for (auto& section : pInfo.Sections)
-	{
-		retData["Sections"].push_back({ section.SectionName, section.SizeOfRawData, section.HashInfo.MD5, section.HashInfo.SHA1, section.HashInfo.SHA256 });
-	}
-
-	for (const auto& lib : pInfo.Imports)		// Get all entries in the import map
-	{
-		for (const auto& func : lib.second)
-		{
-			retData["Imports"][lib.first].push_back(func);
-		}
-	}
-
-	for (auto& s : pInfo.Strings)
-	{
-		bool insert = true;
-		if (s.size() >= 4)
-		{
-			for (auto& c : s)
-			{
-				if (c < 0x20 || c > 0x7E)
-				{
-					insert = false;
-					break;
-				}
-			}
-			if (insert)
-			{
-				retData["Strings"].push_back(s);
-			}
-			
-		}
-	}
-
-
-	if (pInfo.x86)
-	{
-		retData["Architecture"] = "32bit";
-	}
-	else {
-		retData["Architecture"] = "64bit";
-	}
-	
-	return retData;
-}
-
-
-json eventparser::ParseFileEvent(Event<FileEvent>* fileEvent)
-{
-	json retData;
-	auto& data = fileEvent->Data;
-	retData["Timestamp"] = DisplayTime(data.Timestamp);
-	retData["DataPath"] = std::string((char*)(fileEvent + data.OffsetPath), data.PathLength);
-	retData["Process"] = std::string((char*)(fileEvent + data.OffsetProcess), data.ProcessLength);
-	switch (data.Action)
-	{
-	case FileEventType::Read:
-	{
-		retData["Action"] = "Read";
-		break;
-	}
-
-	case FileEventType::Write:
-	{
-		retData["Action"] = "Write";
-		break;
-	}
-
-	default:
-		retData["Action"] = "N/A";
-		break;
-	}
-
-	return retData; 
-}
-
-
-json eventparser::ParseNetworkEvent(Event<NetworkEvent>* networkEvent)
-{
-	json retData;
-	auto& data = networkEvent->Data;
-
-	retData["Timestamp"] = DisplayTime(data.Timestamp);
-	retData["Destination Ip"] = std::string(data.DstIp, 16);
-	retData["Port"] = data.Port;
-	retData["Process"] = std::string((char*)(networkEvent + data.OffsetProcessName), data.ProcessNameLength);
-
-	return retData;
-}
-
-
-json eventparser::ParseProcessEvent(Event<ProcessEvent>* processEvent)
-{
-	json retData;
-	auto& data = processEvent->Data;
-
-	retData["Timestamp"] = DisplayTime(data.Timestamp);
-	retData["ProcessId"] = data.Pid;
-	retData["File"] = std::string((char*)(processEvent + data.OffsetImageFileName), data.ImageFileNameLength);
-	retData["Parent ProcessId"] = data.ParentPid;
-	retData["ParentProcess"] = std::string((char*)(processEvent + data.OffsetParentName), data.ParentNameLength);
-
-	return retData;
-}
-
-json eventparser::ParseImageLoadEvent(Event<ImageLoadEvent>* imageLoadEvent)
-{
-	json retData;
-	auto& data = imageLoadEvent->Data;
-
-	retData["Timestamp"] = DisplayTime(data.Timestamp);
-	retData["Load Base"] = data.ImageBase;
-	retData["Process"] = std::string((char*)(imageLoadEvent + data.OffsetProcessName), data.ProcessNameLength);
-	retData["Load Image"] = std::string((char*)(imageLoadEvent + data.OffsetImageName), data.ImageNameLength);
-	retData["ProcessId"] = data.Pid;
-	
-	return retData;
-}
-
-json eventparser::ParseThreadEvent(Event<ThreadEvent>* threadEvent)
-{
-	json retData;
-	auto& data = threadEvent->Data;
-
-	retData["Timestamp"] = DisplayTime(data.Timestamp);
-	retData["ThreadId"] = data.Tid;
-	retData["Process"] = std::string((char*)(threadEvent + data.OffsetProcessName), data.ProcessNameLength);
-	retData["ProcessId"] = data.Pid;
-
-	return retData;
-}
-
-json eventparser::ParseRemoteThreadEvent(Event<RemoteThreadEvent>* remoteThreadEvent)
-{
-	json retData;
-	auto& data = remoteThreadEvent->Data;
-
-	retData["Timestamp"] = DisplayTime(data.Timestamp);
-	retData["ThreadId"] = data.Tid;
-	retData["Creator Process"] = std::string((char*)(remoteThreadEvent + data.OffsetProcessName), data.ProcessNameLength);
-	retData["Target Process"] = std::string((char*)(remoteThreadEvent + data.OffsetTargetProcessName), data.TargetProcessNameLength);
-	retData["ProcessId"] = data.Pid;
-	retData["Target ProcessId"] = data.TargetProcessId;
-
-	return retData;
-}
-
-json eventparser::ParseRegistryEvent(Event<RegistryEvent>* registryEvent)
-{
-	json retData;
-	auto& data = registryEvent->Data;
-
-	retData["Timestamp"] = DisplayTime(data.Timestamp);
-	retData["Operation"] = REG_NOTIFY_CLASS_MAPPINGS[data.Action];
-	retData["Registry Path"] = std::string((char*)(registryEvent + data.OffsetRegistryPath), data.RegistryPathLength);
-	
-	if (data.ValueLength)
-	{
-		retData["Value"] = std::string((char*)(registryEvent + data.OffsetValue), data.ValueLength);
-	}
-	else {
-		retData["Value"] = "N/A";
-	}
-
-	return retData;
-}
-
-json eventparser::ParseObjectCallbackEvent(Event<ObjectCallbackEvent>* objectCallbackEvent)
-{
-	json retData;
-	auto& data = objectCallbackEvent->Data;
-
-	retData["Timestamp"] = DisplayTime(data.Timestamp);
-	retData["Process"] = std::string((char*)(objectCallbackEvent + data.OffsetProcessName), data.ProcessNameLength);
-	retData["Handle ProcessId"] = data.Pid;
-	retData["ProcessId"] = data.HandlePid;
-	retData["Handle Process"] = std::string((char*)(objectCallbackEvent + data.OffsetHandleProcessName), data.HandleProcessNameLength);
-
-	return retData;
-}
-
-json eventparser::EventToJson(PlEntry* pEvent)
-{
-	EventType type = CheckType(pEvent);
-	
-
-	switch (type)
-	{
-		case EventType::FileParse:
-		{
-			auto evt = (Event<FileParseEvent>*)(pEvent);
-			return eventparser::ParseFileParseEvent(evt);
-		}
-
-		case EventType::FileEvent:
-		{
-			auto evt = (Event<FileEvent>*)(pEvent);
-			return eventparser::ParseFileEvent(evt);
-		}
-
-		case EventType::NetworkEvent:
-		{
-			auto evt = (Event<NetworkEvent>*)(pEvent);
-			return eventparser::ParseNetworkEvent(evt);
-		}
-
-		case EventType::ProcessEvent:
-		{
-			auto evt = (Event<ProcessEvent>*)(pEvent);
-			return eventparser::ParseProcessEvent(evt);
-		}
-
-		case EventType::ImageLoadEvent:
-		{
-			auto evt = (Event<ImageLoadEvent>*)(pEvent);
-			return eventparser::ParseImageLoadEvent(evt);
-		}
-
-		case EventType::ThreadEvent:
-		{
-			auto evt = (Event<ThreadEvent>*)(pEvent);
-			return eventparser::ParseThreadEvent(evt);
-		}
-
-		case EventType::RemoteThreadEvent:
-		{
-			auto evt = (Event<RemoteThreadEvent>*)(pEvent);
-			return eventparser::ParseRemoteThreadEvent(evt);
-		}
-
-		case EventType::RegistryEvent:
-		{
-			auto evt = (Event<RegistryEvent>*)(pEvent);
-			return eventparser::ParseRegistryEvent(evt);
-		}
-
-		case EventType::ObjectCallbackEvent:
-		{
-			auto evt = (Event<ObjectCallbackEvent>*)(pEvent);
-			return eventparser::ParseObjectCallbackEvent(evt);
-		}
-
-		default:
-			return nullptr;
-	}
-
-}
-
-
-
 void CommandHandler(CommandHandler_Info* _CommandHandlerInfo)
 {
 	json CommandJson = json::parse((char*)_CommandHandlerInfo->commBuf);
@@ -319,7 +42,6 @@ void CommandHandler(CommandHandler_Info* _CommandHandlerInfo)
 					return;
 				}
 				CloseHandle(hFile);
-
 
 
 				hFile = CreateFileA(Desktop.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
@@ -520,23 +242,185 @@ void manager::Stop()
 	return;
 }
 
+HANDLE manager::GetFileHandle()
+{
+	return this->hFile;
+}
+
 BOOL manager::CheckExit()
 {
 	return this->exit;
 }
 
+std::string manager::GetApiEndpoint()
+{
+	std::string ret;
+	ret += this->Server;
+	ret += this->ServerApiEndpoint;
+	return ret;
+}
+
 
 void API_sendThread(manager* mgr)
 {
+	while (true)
+	{
+		if (g_Struct.ReadEvents->EntryCount == 0)
+		{
+			Sleep(25);
+			continue;
+		}
+		
+		if (mgr->Server.size() == 0)
+		{
+			Sleep(25);
+			continue;
+		}
 
+		PlEntry curr = nullptr;
+		HANDLE& hMutex = g_Struct.ReadEventsMutex;
+		if (hMutex != INVALID_HANDLE_VALUE)
+		{
+			RAII::MutexLock Lock(hMutex);
+			curr = PopEntry(g_Struct.ReadEvents);
+		}
+		if (curr == nullptr)
+		{
+			continue;
+		}
+
+		json parsed = eventparser::EventToJson(&curr);
+		// now send the data
+
+		Url endpoint = mgr->GetApiEndpoint();
+		Response r = Post(endpoint, Body{ parsed.dump() }, Header{ {"Content-Type", "application/json"} });
+		free(curr);
+	}
 }
 
 void DriverEventConsumerThread(manager* mgr)
 {
+	while (true)
+	{
+		if (mgr->GetFileHandle() == INVALID_HANDLE_VALUE)
+		{
+			Sleep(25);
+			continue;
+		}
 
+		BYTE read_buffer[1 << 16];
+		DWORD bytes = 0;
+		if (!ReadFile(mgr->GetFileHandle(), read_buffer, sizeof(read_buffer), &bytes, 0))
+		{
+			printf("DriverEventConsumerThread: Could not read from driver.\n");
+			continue;
+		}
+		if (bytes != 0)
+		{
+
+			HANDLE& hMutex = g_Struct.ReadEventsMutex;
+			auto count = bytes;
+			BYTE* buf = read_buffer;
+
+			while (count > 0)
+			{
+				auto header = (EventHeader*)buf;
+
+				switch (header->Type)
+				{
+					case EventType::FileEvent:
+					{
+						auto evt = new Event<FileEvent>();
+						auto fe = (FileEvent*)buf;
+						memcpy(&evt->Data, fe, sizeof(FileEvent));
+						RAII::MutexLock Lock(hMutex);
+						PushEntry(g_Struct.ReadEvents, &evt->Entry);
+						break;
+					}
+
+					case EventType::NetworkEvent:
+					{
+						auto evt = new Event<NetworkEvent>();
+						auto ne = (NetworkEvent*)buf;
+						memcpy(&evt->Data, ne, sizeof(NetworkEvent));
+						RAII::MutexLock Lock(hMutex);
+						PushEntry(g_Struct.ReadEvents, &evt->Entry);
+						break;
+					}
+
+					case EventType::ProcessEvent:
+					{
+						auto evt = new Event<ProcessEvent>();
+						auto pe = (ProcessEvent*)buf;
+						memcpy(&evt->Data, pe, sizeof(ProcessEvent));
+						RAII::MutexLock Lock(hMutex);
+						PushEntry(g_Struct.ReadEvents, &evt->Entry);
+						break;
+					}
+
+					case EventType::ImageLoadEvent:
+					{
+						auto evt = new Event<ImageLoadEvent>();
+						auto ile = (ImageLoadEvent*)buf;
+						memcpy(&evt->Data, ile, sizeof(ImageLoadEvent));
+						RAII::MutexLock Lock(hMutex);
+						PushEntry(g_Struct.ReadEvents, &evt->Entry);
+						break;
+					}
+
+					case EventType::ThreadEvent:
+					{
+						auto evt = new Event<ThreadEvent>();
+						auto te = (ThreadEvent*)buf;
+						memcpy(&evt->Data, te, sizeof(ThreadEvent));
+						RAII::MutexLock Lock(hMutex);
+						PushEntry(g_Struct.ReadEvents, &evt->Entry);
+						break;
+					}
+
+					case EventType::RemoteThreadEvent:
+					{
+						auto evt = new Event<RemoteThreadEvent>();
+						auto rte = (RemoteThreadEvent*)buf;
+						memcpy(&evt->Data, rte, sizeof(RemoteThreadEvent));
+						RAII::MutexLock Lock(hMutex);
+						PushEntry(g_Struct.ReadEvents, &evt->Entry);
+						break;
+					}
+
+					case EventType::RegistryEvent:
+					{
+						auto evt = new Event<RegistryEvent>();
+						auto re = (RegistryEvent*)buf;
+						memcpy(&evt->Data, re, sizeof(RegistryEvent));
+						RAII::MutexLock Lock(hMutex);
+						PushEntry(g_Struct.ReadEvents, &evt->Entry);
+						break;
+					}
+
+					case EventType::ObjectCallbackEvent:
+					{
+						auto evt = new Event<ObjectCallbackEvent>();
+						auto oce = (ObjectCallbackEvent*)buf;
+						memcpy(&evt->Data, oce, sizeof(ObjectCallbackEvent));
+						RAII::MutexLock Lock(hMutex);
+						PushEntry(g_Struct.ReadEvents, &evt->Entry);
+						break;
+					}
+
+				default:
+					break;
+
+				}
+				buf += header->Size;
+				buf -= header->Size;
+
+			}
+		}
+	}
 }
 
-manager::manager(char* _Server) : Server(_Server)
+manager::manager(char* _Server) : Server(_Server), hFile(INVALID_HANDLE_VALUE)
 {
 	WORD wVersionRequested = MAKEWORD(2, 2);
 	WSADATA wsaData;
@@ -562,8 +446,10 @@ manager::manager(char* _Server) : Server(_Server)
 		printf("The Winsock 2.2 dll was found okay\n");
 	}
 		
+	
 
 
+	// Thread Initialization
 	hAPI_recvThread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)API_recvThread, this, 0, 0);
 	hAPI_sendThread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)API_sendThread, this, 0, 0);
 

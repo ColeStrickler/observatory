@@ -1,51 +1,25 @@
 #pragma once
-
-
-
-
 #include <winsock2.h>
 #include <WS2tcpip.h>
 #include <Windows.h>
-
-
 #include <vector>
 #include <string>
 #include "nlohmann/json.hpp"
+#include "cpr/cpr.h"
 #include <shlobj.h>
 #include "LinkedList.h"
 #include "eventdef.h"
 #include "api_status.h"
 #include "helper.h"
+#include "infrastructure.h"
+#include "eventparser.h"
 
 
 #pragma comment (lib, "Ws2_32.lib")
 
+extern Globals g_Struct;
 
-using namespace nlohmann;
-
-
-
-
-namespace eventparser
-{
-	EventType CheckType(PlEntry* Event);
-	json EventToJson(PlEntry* Event);							// We will take in the first elment of an Event struct template and parse it from here
-	json ParseFileParseEvent(Event<FileParseEvent>* fileEvent);
-	json ParseFileEvent(Event<FileEvent>* fileEvent);
-	json ParseNetworkEvent(Event<NetworkEvent>* networkEvent);
-	json ParseProcessEvent(Event<ProcessEvent>* processEvent);
-	json ParseImageLoadEvent(Event<ImageLoadEvent>* imageLoadEvent);
-	json ParseThreadEvent(Event<ThreadEvent>* threadEvent);
-	json ParseRemoteThreadEvent(Event<RemoteThreadEvent>* remoteThreadEvent);
-	json ParseRegistryEvent(Event<RegistryEvent>* registryEvent);
-	json ParseObjectCallbackEvent(Event<ObjectCallbackEvent>* objectCallbackEvent);
-};
-
-
-
-
-
-
+using namespace cpr;
 
 class manager
 {
@@ -54,27 +28,38 @@ public:
 	~manager();
 	void Stop();
 	BOOL CheckExit();
-	std::string Server;
+	HANDLE GetFileHandle();
+	std::string GetApiEndpoint();
+	
 	std::vector<DWORD> Errors;
 	std::string MonitoredFilePath;
+	std::string Server;
+	std::string ServerApiEndpoint;
+	
 private:
 	
-
+	static void ManagerThread();
 	void ConsumeErrors(std::vector<DWORD>& ErrorVector);	
 private:
 	BOOL exit;
+
+	
 
 	// ERRORS
 	
 
 	// MUTEXES
-	HANDLE EventHeadMutex;
 	HANDLE ErrorsMutex;
 
 	// THREAD HANDLES
+	static HANDLE hManagerThread;
 	HANDLE hDriverEventConsumerThread;
 	HANDLE hAPI_sendThread;
 	HANDLE hAPI_recvThread;
+
+	// MONITORED FILE HANDLE
+	HANDLE hFile;
+
 };
 
 struct CommandHandler_Info
