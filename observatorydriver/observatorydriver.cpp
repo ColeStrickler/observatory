@@ -1,4 +1,6 @@
 #include "infrastructure.h"
+#pragma warning(disable: 4311)
+#pragma warning(disable: 4302)
 
 
 void UnloadObservatoryDriver(PDRIVER_OBJECT DriverObject);
@@ -6,9 +8,9 @@ NTSTATUS WriteMonitoredFile(PDEVICE_OBJECT, PIRP Irp);
 NTSTATUS ReadEvents(PDEVICE_OBJECT, PIRP Irp);
 NTSTATUS CreateClose(PDEVICE_OBJECT, PIRP Irp);
 
+
+
 Globals g_Struct;
-
-
 
 
 extern "C" NTSTATUS
@@ -25,7 +27,8 @@ DriverEntry(
     UNICODE_STRING devName = RTL_CONSTANT_STRING(L"\\device\\observatorydriver");
 
     // Bools
-    bool SymLinkCreated =   FALSE;
+    bool SymLinkCreated =           FALSE;
+    bool ProcessCallbacks =         FALSE;
     
 
 
@@ -57,6 +60,15 @@ DriverEntry(
         }
         SymLinkCreated = true;
 
+        status = PsSetCreateProcessNotifyRoutineEx(procmon::OnProcessNotify, FALSE);
+        if (!NT_SUCCESS(status)) {
+            KdPrint(("DriverEntry: failed to register process callback (0x%08X)\n", status));
+            break;
+        }
+        ProcessCallbacks = true;
+
+
+
 
     } while (FALSE);
 
@@ -64,6 +76,12 @@ DriverEntry(
     if (!NT_SUCCESS(status))
     {
         
+
+        if (ProcessCallbacks)
+        {
+            PsSetCreateProcessNotifyRoutineEx(procmon::OnProcessNotify, TRUE);
+        }
+            
         if (SymLinkCreated)
         {
             IoDeleteSymbolicLink(&symLink);
@@ -272,3 +290,4 @@ NTSTATUS CreateClose(PDEVICE_OBJECT, PIRP Irp) {
     IoCompleteRequest(Irp, 0);
     return STATUS_SUCCESS;
 }
+

@@ -1,11 +1,13 @@
 #pragma once
 #include <ntifs.h>
 #include <wdm.h>
-#include "KernelRaiiMgmt.h"
 #include <stdlib.h>
+#include "KernelRaiiMgmt.h"
+#include "providers.h"
 
 // TYPEDEFS
 typedef unsigned long DWORD;
+typedef unsigned char BYTE;
 #define DRIVER_TAG 'obsv'
 
 
@@ -26,6 +28,7 @@ typedef struct MonitoredFile
 {
 	LIST_ENTRY Entry;
 	UNICODE_STRING FilePath;
+	ULONG PID;
 }*PMonitoredFile;
 
 
@@ -151,3 +154,4 @@ struct ObjectCallbackEvent : EventHeader
 
 // DRIVER CONTROL CODES
 #define DRIVER_IOCTL_CLEAR CTL_CODE(0x8000, 0x800, METHOD_NEITHER, FILE_ANY_ACCESS)
+;

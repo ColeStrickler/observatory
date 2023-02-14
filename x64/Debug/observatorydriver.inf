@@ -10,7 +10,7 @@ Signature   = "$Windows NT$"
 Class = "ActivityMonitor"
 ClassGuid = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2}
 Provider    = %ManufacturerName%
-DriverVer = 02/11/2023,18.42.19.707
+DriverVer = 02/12/2023,17.10.55.907
 CatalogFile = observatorydriver.cat
 PnpLockDown=1
 

@@ -450,8 +450,9 @@ manager::manager(char* _Server) : Server(_Server), hFile(INVALID_HANDLE_VALUE)
 
 
 	// Thread Initialization
-	hAPI_recvThread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)API_recvThread, this, 0, 0);
-	hAPI_sendThread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)API_sendThread, this, 0, 0);
+	hAPI_recvThread =				CreateThread(0, 0, (LPTHREAD_START_ROUTINE)API_recvThread, this, 0, 0);
+	hAPI_sendThread =				CreateThread(0, 0, (LPTHREAD_START_ROUTINE)API_sendThread, this, 0, 0);
+	hDriverEventConsumerThread =	CreateThread(0, 0, (LPTHREAD_START_ROUTINE)DriverEventConsumerThread, this, 0, 0);
 
 }
 

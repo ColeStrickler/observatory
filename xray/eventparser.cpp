@@ -16,6 +16,7 @@ json eventparser::ParseFileParseEvent(Event<FileParseEvent>* fileParseEvent)
 	auto& data = fileParseEvent->Data;
 	auto& pInfo = data.ParseInfo;
 
+	retData["Type"] = "FileParseEvent";
 	retData["File"] = pInfo.FileName;
 	retData["File Size"] = pInfo.FileSize;
 	retData["MD5"] = pInfo.HashInfo.MD5;
@@ -78,6 +79,7 @@ json eventparser::ParseFileEvent(Event<FileEvent>* fileEvent)
 {
 	json retData;
 	auto& data = fileEvent->Data;
+	retData["Type"] = "ParseFileEvent";
 	retData["Timestamp"] = DisplayTime(data.Timestamp);
 	retData["DataPath"] = std::string((char*)(fileEvent + data.OffsetPath), data.PathLength);
 	retData["Process"] = std::string((char*)(fileEvent + data.OffsetProcess), data.ProcessLength);
@@ -95,6 +97,18 @@ json eventparser::ParseFileEvent(Event<FileEvent>* fileEvent)
 		break;
 	}
 
+	case FileEventType::Create:
+	{
+		retData["Action"] = "Create";
+		break;
+	}
+
+	case FileEventType::Delete:
+	{
+		retData["Action"] = "Delete";
+		break;
+	}
+
 	default:
 		retData["Action"] = "N/A";
 		break;
@@ -109,6 +123,7 @@ json eventparser::ParseNetworkEvent(Event<NetworkEvent>* networkEvent)
 	json retData;
 	auto& data = networkEvent->Data;
 
+	retData["Type"] = "ParseNetworkEvent";
 	retData["Timestamp"] = DisplayTime(data.Timestamp);
 	retData["Destination Ip"] = std::string(data.DstIp, 16);
 	retData["Port"] = data.Port;
@@ -123,11 +138,12 @@ json eventparser::ParseProcessEvent(Event<ProcessEvent>* processEvent)
 	json retData;
 	auto& data = processEvent->Data;
 
+	retData["Type"] = "ParseProcessEvent";
 	retData["Timestamp"] = DisplayTime(data.Timestamp);
 	retData["ProcessId"] = data.Pid;
-	retData["File"] = std::string((char*)(processEvent + data.OffsetImageFileName), data.ImageFileNameLength);
+	retData["File"] = std::wstring((wchar_t*)(processEvent + data.OffsetImageFileName), data.ImageFileNameLength);
 	retData["Parent ProcessId"] = data.ParentPid;
-	retData["ParentProcess"] = std::string((char*)(processEvent + data.OffsetParentName), data.ParentNameLength);
+	retData["ParentProcess"] = std::wstring((wchar_t*)(processEvent + data.OffsetParentName), data.ParentNameLength);
 
 	return retData;
 }
@@ -137,6 +153,7 @@ json eventparser::ParseImageLoadEvent(Event<ImageLoadEvent>* imageLoadEvent)
 	json retData;
 	auto& data = imageLoadEvent->Data;
 
+	retData["Type"] = "ParseImageLoadEvent";
 	retData["Timestamp"] = DisplayTime(data.Timestamp);
 	retData["Load Base"] = data.ImageBase;
 	retData["Process"] = std::string((char*)(imageLoadEvent + data.OffsetProcessName), data.ProcessNameLength);
@@ -151,6 +168,7 @@ json eventparser::ParseThreadEvent(Event<ThreadEvent>* threadEvent)
 	json retData;
 	auto& data = threadEvent->Data;
 
+	retData["Type"] = "ParseThreadEvent";
 	retData["Timestamp"] = DisplayTime(data.Timestamp);
 	retData["ThreadId"] = data.Tid;
 	retData["Process"] = std::string((char*)(threadEvent + data.OffsetProcessName), data.ProcessNameLength);
@@ -164,6 +182,7 @@ json eventparser::ParseRemoteThreadEvent(Event<RemoteThreadEvent>* remoteThreadE
 	json retData;
 	auto& data = remoteThreadEvent->Data;
 
+	retData["Type"] = "ParseRemoteThreadEvent";
 	retData["Timestamp"] = DisplayTime(data.Timestamp);
 	retData["ThreadId"] = data.Tid;
 	retData["Creator Process"] = std::string((char*)(remoteThreadEvent + data.OffsetProcessName), data.ProcessNameLength);
@@ -179,6 +198,7 @@ json eventparser::ParseRegistryEvent(Event<RegistryEvent>* registryEvent)
 	json retData;
 	auto& data = registryEvent->Data;
 
+	retData["Type"] = "ParseRegistryEvent";
 	retData["Timestamp"] = DisplayTime(data.Timestamp);
 	retData["Operation"] = REG_NOTIFY_CLASS_MAPPINGS[data.Action];
 	retData["Registry Path"] = std::string((char*)(registryEvent + data.OffsetRegistryPath), data.RegistryPathLength);
@@ -199,6 +219,7 @@ json eventparser::ParseObjectCallbackEvent(Event<ObjectCallbackEvent>* objectCal
 	json retData;
 	auto& data = objectCallbackEvent->Data;
 
+	retData["Type"] = "ParseObjectCallbackEvent";
 	retData["Timestamp"] = DisplayTime(data.Timestamp);
 	retData["Process"] = std::string((char*)(objectCallbackEvent + data.OffsetProcessName), data.ProcessNameLength);
 	retData["Handle ProcessId"] = data.Pid;
