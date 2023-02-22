@@ -28,6 +28,26 @@ void PushMonitoredFile(LIST_ENTRY* entry, LIST_ENTRY* ListHead, FastMutex& Mutex
 		auto item = CONTAINING_RECORD(head, MonitoredFile, Entry);
 		ExFreePool(item);
 	}
+	auto item = CONTAINING_RECORD(entry, MonitoredFile, Entry);
+	item->PID = item->PID;
+	KdPrint(("Inserting entry: %wZ\n\n", item->FilePath));
+	InsertTailList(ListHead, entry);
+	count++;
+}
+
+void PushMonitoredFile(LIST_ENTRY* entry, LIST_ENTRY* ListHead, int& count)
+{
+	
+	// too many items, remove oldest
+	if (count > 1024) {
+		auto head = RemoveHeadList(ListHead);
+		count--;
+		auto item = CONTAINING_RECORD(head, MonitoredFile, Entry);
+		ExFreePool(item);
+	}
+	auto item = CONTAINING_RECORD(entry, MonitoredFile, Entry);
+	item->PID = item->PID;
+	KdPrint(("Inserting entry: %wZ\n\n", item->FilePath));
 	InsertTailList(ListHead, entry);
 	count++;
 }

@@ -59,11 +59,48 @@ void test_pe_parser()
 }
 
 
-int main()
+
+struct s {
+	lEntry Entry;
+	int num;
+};
+
+int main(int argc, char* argv[])
 {
-	auto Manager = new manager((char*)"www.google.com");
+
+	InitializeListHeader(&g_Struct.ReadEvents);
+	
+	g_Struct.ReadEventsMutex = CreateMutexA(0, 0, 0);
+
+	s newEnt;
+	newEnt.num = 1;
+
+
+	//PushEntry(g_Struct.ReadEvents, &newEnt.Entry);
+	//auto one = PopEntry(g_Struct.ReadEvents);
+	//auto two = PopEntry(g_Struct.ReadEvents);
+	
+	//if (two == &g_Struct.ReadEvents->Entry)
+	//{
+	//	printf("Equal. 0x%p  == 0x%p\n", one, two, &g_Struct.ReadEvents);
+	//}
+
+
+
+
+	//Url url = std::string("http://192.168.86.48/api");
+
+	//json parsed = { {"test", "Swag"} };
+
+
+	//Response r = Post(url, Body{ parsed.dump() }, Header{ {"Content-Type", "application/json"} });
+
+
+
+	auto Manager = new manager((char*)"192.168.86.48");
 	while (!Manager->CheckExit())
 	{
-
+		printf("Not done..\n");
+		Sleep(2000);
 	}
 }	

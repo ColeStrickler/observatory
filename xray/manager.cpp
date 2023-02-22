@@ -283,6 +283,7 @@ void API_sendThread(manager* mgr)
 		{
 			RAII::MutexLock Lock(hMutex);
 			curr = PopEntry(g_Struct.ReadEvents);
+			PlEntry check = PopEntry(g_Struct.ReadEvents);
 		}
 		if (curr == nullptr)
 		{
@@ -290,9 +291,10 @@ void API_sendThread(manager* mgr)
 		}
 
 		json parsed = eventparser::EventToJson(&curr);
+		printf(parsed.dump().c_str());
 		// now send the data
 
-		Url endpoint = mgr->GetApiEndpoint();
+		Url endpoint = std::string("http://") + mgr->GetApiEndpoint();
 		Response r = Post(endpoint, Body{ parsed.dump() }, Header{ {"Content-Type", "application/json"} });
 		free(curr);
 	}
@@ -302,8 +304,11 @@ void DriverEventConsumerThread(manager* mgr)
 {
 	while (true)
 	{
+		// TEST REMOVE LATER
+		Sleep(1000);
 		if (mgr->GetFileHandle() == INVALID_HANDLE_VALUE)
 		{
+			printf("invalid driver handle...\n");
 			Sleep(25);
 			continue;
 		}
@@ -317,7 +322,7 @@ void DriverEventConsumerThread(manager* mgr)
 		}
 		if (bytes != 0)
 		{
-
+			
 			HANDLE& hMutex = g_Struct.ReadEventsMutex;
 			auto count = bytes;
 			BYTE* buf = read_buffer;
@@ -348,11 +353,13 @@ void DriverEventConsumerThread(manager* mgr)
 						break;
 					}
 
-					case EventType::ProcessEvent:
+					case EventType::ProcessEvent:					// this one is working
 					{
-						auto evt = new Event<ProcessEvent>();
 						auto pe = (ProcessEvent*)buf;
-						memcpy(&evt->Data, pe, sizeof(ProcessEvent));
+						size_t allocSize = sizeof(Event<ProcessEvent>) + (pe->Size - sizeof(ProcessEvent));
+						auto evt = (Event<ProcessEvent>*)new BYTE[allocSize];
+						memset(evt, 0x00, allocSize);
+						memcpy(&evt->Data, buf, pe->Size);
 						RAII::MutexLock Lock(hMutex);
 						PushEntry(g_Struct.ReadEvents, &evt->Entry);
 						break;
@@ -412,15 +419,16 @@ void DriverEventConsumerThread(manager* mgr)
 					break;
 
 				}
+				printf("PUSHED ENTRY\n");
 				buf += header->Size;
-				buf -= header->Size;
-
+				count -= header->Size;
 			}
+			//printf("Read no events..\n");
 		}
 	}
 }
 
-manager::manager(char* _Server) : Server(_Server), hFile(INVALID_HANDLE_VALUE)
+manager::manager(char* _Server) : Server(_Server), hFile(INVALID_HANDLE_VALUE), exit(FALSE), ServerApiEndpoint("/api")
 {
 	WORD wVersionRequested = MAKEWORD(2, 2);
 	WSADATA wsaData;
@@ -447,10 +455,28 @@ manager::manager(char* _Server) : Server(_Server), hFile(INVALID_HANDLE_VALUE)
 	}
 		
 	
+	hFile = CreateFile(L"\\\\.\\observatorydriver", GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+	if (hFile == INVALID_HANDLE_VALUE)
+	{
+		printf("Unable to obtain handle to driver.\n");
+		exit = TRUE;
+		return;
+	}
 
+
+	const char* file = "\\??\\C:\\Windows\\System32\\cmd.exe";
+	RAII::NewBuffer buf(strlen(file) + 1);
+	BYTE* buffer = buf.Get();
+
+	memcpy(buffer, file, strlen(file));
+
+
+	DWORD retBytes;
+	// This is temporary for testing
+	WriteFile(hFile, buffer, strlen(file) + 1, &retBytes, 0);
 
 	// Thread Initialization
-	hAPI_recvThread =				CreateThread(0, 0, (LPTHREAD_START_ROUTINE)API_recvThread, this, 0, 0);
+	//hAPI_recvThread =				CreateThread(0, 0, (LPTHREAD_START_ROUTINE)API_recvThread, this, 0, 0);
 	hAPI_sendThread =				CreateThread(0, 0, (LPTHREAD_START_ROUTINE)API_sendThread, this, 0, 0);
 	hDriverEventConsumerThread =	CreateThread(0, 0, (LPTHREAD_START_ROUTINE)DriverEventConsumerThread, this, 0, 0);
 

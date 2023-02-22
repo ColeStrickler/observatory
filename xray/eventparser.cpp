@@ -3,9 +3,10 @@
 
 
 
-EventType eventparser::CheckType(PlEntry* Event)
+EventType eventparser::CheckType(PlEntry* event)
 {
-	return *(EventType*)((UINT64)Event + sizeof(PlEntry));
+	auto item = CONTAINING_RECORD(*event, Event<EventHeader>, Entry);
+	return item->Data.Type;
 }
 
 
@@ -138,12 +139,17 @@ json eventparser::ParseProcessEvent(Event<ProcessEvent>* processEvent)
 	json retData;
 	auto& data = processEvent->Data;
 
+
+	std::wstring file = std::wstring((wchar_t*)((uintptr_t)&processEvent->Data + data.OffsetImageFileName), data.ImageFileNameLength / 2);
+	std::string file_formatted = WstringToString(file);
+	std::wstring parent_proc = std::wstring((wchar_t*)((uintptr_t)&processEvent->Data + data.OffsetParentName), data.ParentNameLength / 2);
+	std::string parent_proc_formatted = WstringToString(parent_proc);
 	retData["Type"] = "ParseProcessEvent";
 	retData["Timestamp"] = DisplayTime(data.Timestamp);
 	retData["ProcessId"] = data.Pid;
-	retData["File"] = std::wstring((wchar_t*)(processEvent + data.OffsetImageFileName), data.ImageFileNameLength);
+	retData["File"] = file_formatted;
 	retData["Parent ProcessId"] = data.ParentPid;
-	retData["ParentProcess"] = std::wstring((wchar_t*)(processEvent + data.OffsetParentName), data.ParentNameLength);
+	retData["ParentProcess"] = parent_proc_formatted;
 
 	return retData;
 }
@@ -233,7 +239,6 @@ json eventparser::EventToJson(PlEntry* pEvent)
 {
 	EventType type = CheckType(pEvent);
 
-
 	switch (type)
 	{
 	case EventType::FileParse:
@@ -256,7 +261,7 @@ json eventparser::EventToJson(PlEntry* pEvent)
 
 	case EventType::ProcessEvent:
 	{
-		auto evt = (Event<ProcessEvent>*)(pEvent);
+		auto evt = CONTAINING_RECORD(*pEvent, Event<ProcessEvent>, Entry);
 		return eventparser::ParseProcessEvent(evt);
 	}
 

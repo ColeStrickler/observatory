@@ -6,7 +6,7 @@
 #include "providers.h"
 
 // TYPEDEFS
-typedef unsigned long DWORD;
+typedef UINT32 DWORD;
 typedef unsigned char BYTE;
 #define DRIVER_TAG 'obsv'
 
@@ -34,6 +34,7 @@ typedef struct MonitoredFile
 
 // FUNCTIONS
 void PushEvent(LIST_ENTRY* entry, LIST_ENTRY* ListHead, FastMutex& Mutex, int& count);
+void PushMonitoredFile(LIST_ENTRY* entry, LIST_ENTRY* ListHead, int& count);
 void PushMonitoredFile(LIST_ENTRY* entry, LIST_ENTRY* ListHead, FastMutex& Mutex, int& count);
 void charToUnicodeString(char* text, UNICODE_STRING& outstring);
 

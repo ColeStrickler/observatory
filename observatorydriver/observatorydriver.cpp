@@ -76,7 +76,6 @@ DriverEntry(
     if (!NT_SUCCESS(status))
     {
         
-
         if (ProcessCallbacks)
         {
             PsSetCreateProcessNotifyRoutineEx(procmon::OnProcessNotify, TRUE);
@@ -112,7 +111,7 @@ void UnloadObservatoryDriver(PDRIVER_OBJECT DriverObject)
     UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\observatorydriver");
     IoDeleteSymbolicLink(&symLink);
     IoDeleteDevice(DriverObject->DeviceObject);
-
+    PsSetCreateProcessNotifyRoutineEx(procmon::OnProcessNotify, TRUE);
 
     while (!IsListEmpty(&g_Struct.EventsHead))
     {
@@ -173,7 +172,7 @@ void UnloadObservatoryDriver(PDRIVER_OBJECT DriverObject)
 
     while (!IsListEmpty(&g_Struct.MonitoredFiles))
     {
-        auto entry = RemoveHeadList(&g_Struct.EventsHead);
+        auto entry = RemoveHeadList(&g_Struct.MonitoredFiles);
         ExFreePool(CONTAINING_RECORD(entry, MonitoredFile, Entry));
     }
 
@@ -202,14 +201,17 @@ NTSTATUS WriteMonitoredFile(PDEVICE_OBJECT, PIRP Irp)
     }
     else
     {
-        KdPrint(("Begin monitoring file: %s", (char*)buffer));
+        KdPrint(("Begin monitoring file: %s\n", (char*)buffer));
         auto NewMonitoredFile = (MonitoredFile*)ExAllocatePoolWithTag(NonPagedPool, sizeof(MonitoredFile), DRIVER_TAG);
         if (NewMonitoredFile == nullptr)
         {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
+        NewMonitoredFile->PID = 0;
+
         charToUnicodeString((char*)buffer, NewMonitoredFile->FilePath);
+        KdPrint(("Begin Monitoring File: %wZ\n", &NewMonitoredFile->FilePath));
         PushMonitoredFile(&NewMonitoredFile->Entry, &g_Struct.MonitoredFiles, g_Struct.MonitoredFilesMutex, g_Struct.MonitoredFilesCount);
     }
     Irp->IoStatus.Status = status;
@@ -251,7 +253,11 @@ NTSTATUS ReadEvents(PDEVICE_OBJECT, PIRP Irp)
         {
             if (IsListEmpty(&g_Struct.EventsHead))
             {
+                KdPrint(("Events is empty on Read.\n"));
                 break;
+            }
+            else {
+                KdPrint(("Copying over events...\n"));
             }
 
             auto entry = RemoveHeadList(&g_Struct.EventsHead);

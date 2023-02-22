@@ -60,11 +60,14 @@ PlEntry PopEntry(PListHeader ListHeader)
 	if (ListHeader->Entry.Flink == nullptr) {
 		return nullptr;
 	}
+	else if (ListHeader->EntryCount == 0)
+	{
+		return nullptr;
+	}
 	else {
 		auto popped = ListHeader->Entry.Flink;
 		auto next = popped->Flink;
 		ListHeader->Entry.Flink = next;
-		next->Blink = &ListHeader->Entry;
 		popped->Flink = nullptr;
 		popped->Blink = nullptr;
 		ListHeader->EntryCount--;
@@ -76,6 +79,10 @@ PlEntry PopEntry(PListHeader ListHeader)
 PlEntry PopEntryTail(PListHeader ListHeader)
 {
 	if (ListHeader->Entry.Blink == nullptr) {
+		return nullptr;
+	}
+	else if (ListHeader->EntryCount == 0)
+	{
 		return nullptr;
 	}
 	else {
@@ -93,6 +100,13 @@ PlEntry PopEntryTail(PListHeader ListHeader)
 
 PlEntry RemoveEntry(PListHeader ListHeader, PlEntry Entry)
 {
+	if (ListHeader->Entry.Blink == nullptr) {
+		return nullptr;
+	}
+	else if (ListHeader->EntryCount == 0)
+	{
+		return nullptr;
+	}
 	auto prev = Entry->Blink;
 	auto next = Entry->Flink;
 	prev->Flink = next;

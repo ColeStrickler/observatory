@@ -1,6 +1,6 @@
 #pragma once
 #include "manager.h"
-
+#include <iostream>
 
 using namespace nlohmann;
 

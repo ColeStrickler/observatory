@@ -12,6 +12,11 @@ struct AutoLock {
 		_lock.Unlock();
 	}
 
+	void unlock()
+	{
+		_lock.Unlock();
+	}
+
 private:
 	TLock& _lock;
 };
