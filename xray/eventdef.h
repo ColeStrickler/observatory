@@ -56,6 +56,7 @@ struct FileEvent : EventHeader
 	DWORD ProcessLength;
 };
 
+
 struct NetworkEvent : EventHeader
 {
 	DWORD OffsetProcessName;

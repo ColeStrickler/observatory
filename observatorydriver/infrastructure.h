@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include "KernelRaiiMgmt.h"
 #include "providers.h"
+#include "fsmon.h"
 
 // TYPEDEFS
 typedef UINT32 DWORD;
@@ -14,6 +15,10 @@ typedef unsigned char BYTE;
 // STRUCTURES
 typedef struct Globals
 {
+	PFLT_FILTER gFilterHandle;
+
+
+
 	FastMutex					EventsMutex;
 	LIST_ENTRY					EventsHead;
 	int							EventCount;

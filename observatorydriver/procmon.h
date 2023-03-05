@@ -1,13 +1,7 @@
 #pragma once
-#include "infrastructure.h"
+#include "helpers.h"
 
-typedef NTSTATUS(*QUERY_INFO_PROCESS)(
-	__in HANDLE                                      ProcessHandle,
-	__in PROCESSINFOCLASS                            ProcessInformationClass,
-	__out_bcount_opt(ProcessInformationLength) PVOID ProcessInformation,
-	__in UINT32                                      ProcessInformationLength,
-	__out_opt PUINT32                                ReturnLength
-	);
+
 
 namespace procmon
 {

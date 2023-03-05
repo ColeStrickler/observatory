@@ -16,15 +16,15 @@ Environment:
 --*/
 
 
-#pragma warning( disable : 4996)
-
-#include <fltKernel.h>
-#include <dontuse.h>
-
-#pragma prefast(disable:__WARNING_ENCODE_MEMBER_FUNCTION_POINTER, "Not valid for kernel mode drivers")
+extern Globals g_Struct;
+static QUERY_INFO_PROCESS ZwQueryInformationProcess = nullptr;
 
 
-PFLT_FILTER gFilterHandle;
+
+
+
+
+
 ULONG_PTR OperationStatusCtx = 1;
 
 #define PTDBG_TRACE_ROUTINES            0x00000001
@@ -38,13 +38,6 @@ ULONG gTraceFlags = 0;
         DbgPrint _string :                          \
         ((int)0))
 
-extern "C" NTSTATUS ZwQueryInformationProcess(
-    _In_      HANDLE           ProcessHandle,
-    _In_      PROCESSINFOCLASS ProcessInformationClass,
-    _Out_     PVOID            ProcessInformation,
-    _In_      ULONG            ProcessInformationLength,
-    _Out_opt_ PULONG           ReturnLength
-);
 
 /*************************************************************************
     Prototypes
@@ -53,50 +46,7 @@ EXTERN_C_START
 
 
 
-DRIVER_INITIALIZE DriverEntry;
-NTSTATUS
-DriverEntry(
-    _In_ PDRIVER_OBJECT DriverObject,
-    _In_ PUNICODE_STRING RegistryPath
-);
 
-NTSTATUS
-DeleteProtectInstanceSetup(
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_ FLT_INSTANCE_SETUP_FLAGS Flags,
-    _In_ DEVICE_TYPE VolumeDeviceType,
-    _In_ FLT_FILESYSTEM_TYPE VolumeFilesystemType
-);
-
-VOID
-DeleteProtectInstanceTeardownStart(
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
-);
-
-VOID
-DeleteProtectInstanceTeardownComplete(
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
-);
-
-NTSTATUS
-DeleteProtectUnload(
-    _In_ FLT_FILTER_UNLOAD_FLAGS Flags
-);
-
-NTSTATUS
-DeleteProtectInstanceQueryTeardown(
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_ FLT_INSTANCE_QUERY_TEARDOWN_FLAGS Flags
-);
-
-FLT_PREOP_CALLBACK_STATUS
-DeleteProtectPreOperation(
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
-);
 
 VOID
 DeleteProtectOperationStatusCallback(
@@ -136,14 +86,7 @@ EXTERN_C_END
 //  Assign text sections for each routine.
 //
 
-#ifdef ALLOC_PRAGMA
-#pragma alloc_text(INIT, DriverEntry)
-#pragma alloc_text(PAGE, DeleteProtectUnload)
-#pragma alloc_text(PAGE, DeleteProtectInstanceQueryTeardown)
-#pragma alloc_text(PAGE, DeleteProtectInstanceSetup)
-#pragma alloc_text(PAGE, DeleteProtectInstanceTeardownStart)
-#pragma alloc_text(PAGE, DeleteProtectInstanceTeardownComplete)
-#endif
+
 
 //
 //  operation registration
@@ -244,12 +187,13 @@ FLT_PREOP_CALLBACK_STATUS __stdcall DelProtectPreSetInformation(
 
 
 _Use_decl_annotations_
-FLT_PREOP_CALLBACK_STATUS __stdcall MJ_CreateCallback(
+FLT_PREOP_CALLBACK_STATUS __stdcall fsmon::PreCreate(
     _Inout_ PFLT_CALLBACK_DATA Data,
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _Outptr_result_maybenull_ PVOID* CompletionContext
 )
 {
+    
     UNREFERENCED_PARAMETER(FltObjects);
     UNREFERENCED_PARAMETER(CompletionContext);
 
@@ -257,86 +201,115 @@ FLT_PREOP_CALLBACK_STATUS __stdcall MJ_CreateCallback(
     if (Data->RequestorMode == KernelMode) {
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
+    
 
     const auto& params = Data->Iopb->Parameters.Create;
 
     if (params.Options & FILE_DELETE_ON_CLOSE) {
 
         auto size = 1000;
-        auto procName = (UNICODE_STRING*)ExAllocatePool(PagedPool, size);
+        auto procName = (UNICODE_STRING*)ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
         if (procName == nullptr) {
+            KdPrint(("fsmon::PreCreate() --> could not allocate pool\n"));
             return FLT_PREOP_SUCCESS_NO_CALLBACK;
         }
         RtlZeroMemory(procName, size);
-        // KdPrint(("Zeroed memory for ZwQueryInfoProcess\n"));
-        auto status = ZwQueryInformationProcess(NtCurrentProcess(), ProcessImageFileName, procName, size - sizeof(WCHAR), nullptr);
-        // KdPrint(("Got Proc info\n"));
-        if (NT_SUCCESS(status)) {
-            if (wcsstr(procName->Buffer, L"\\System32\\cmd.exe") || wcsstr(procName->Buffer, L"\\SysWOW64\\cmd.exe")) {
-                // deny the operation
-                Data->IoStatus.Status = STATUS_ACCESS_DENIED;
-                PFLT_FILE_NAME_INFORMATION NameInfo;
-                // KdPrint(("Trying to get FileNameInformation...\n"));
-                status = FltGetFileNameInformation(Data, FLT_FILE_NAME_OPENED, &NameInfo);
-                if (NT_SUCCESS(status)) {
-                    KdPrint(("Blocked deletion of %wZ by cmd.exe\n!", NameInfo->Name));
-                    FltReleaseFileNameInformation(NameInfo);
-                }
-                else {
-                    KdPrint(("Blocked deletion operation by cmd.exe\n!", NameInfo->Name));
-                }
-                ExFreePool(procName);
-
-                // TELL FILTER MANAGER TO NOT CONTINUE ON WITH THE REQUEST
-                return FLT_PREOP_COMPLETE;
+        
 
 
+        if (ZwQueryInformationProcess == nullptr)
+        {
+            if (!helpers::ResolveSystemFunction((void**)&ZwQueryInformationProcess, L"ZwQueryInformationProcess"))
+            {
+                KdPrint(("fsmon::PreCreate() --> Unable to resolve ZwQueryInformationProcess\n"));
+                return FLT_PREOP_SUCCESS_NO_CALLBACK;
             }
         }
-        ExFreePool(procName);
+        
+        auto status = ZwQueryInformationProcess(NtCurrentProcess(), ProcessImageFileName, procName, size - sizeof(WCHAR), nullptr);
+        
+        if (!NT_SUCCESS(status))
+        {
+            KdPrint(("fsmon::PreCreate() --> ZwQueryInformationProcess failed!\n"));
+            ExFreePool(procName);
+            return FLT_PREOP_SUCCESS_NO_CALLBACK;
+        }
 
+
+        ULONG pid = HandleToUlong(PsGetCurrentProcessId());
+        KdPrint(("Got PID: %ld\n", pid));
+        if (procmon::CheckIfMonitoredPID(g_Struct.MonitoredFiles.Flink, pid, g_Struct.MonitoredFilesMutex))
+        {
+            KdPrint(("Got file event for monitored PID\n"));
+            PFLT_FILE_NAME_INFORMATION NameInfo;
+            status = FltGetFileNameInformation(Data, FLT_FILE_NAME_OPENED, &NameInfo);
+            if (!NT_SUCCESS(status))
+            {
+                ExFreePool(procName);
+                return FLT_PREOP_SUCCESS_NO_CALLBACK;
+            }
+
+            // in procmon we gave two extra bytes in the allocation, but they seem unneeded
+            auto allocSize = sizeof(Event<FileEvent>) + NameInfo->Name.Length + procName->Length;
+
+            auto evt = (Event<FileEvent>*)ExAllocatePoolWithTag(NonPagedPool, allocSize, DRIVER_TAG);
+            if (!evt)
+            {
+                FltReleaseFileNameInformation(NameInfo);
+                ExFreePool(procName);
+                return FLT_PREOP_SUCCESS_NO_CALLBACK;
+            }
+
+            FileEvent& data = evt->Data;
+
+
+            data.Type = EventType::FileEvent;
+            data.Size = sizeof(FileEvent) + NameInfo->Name.Length + procName->Length;
+            KdPrint(("Size: %d\n", data.Size));
+            KeQuerySystemTime(&data.Timestamp);
+            data.PathLength = NameInfo->Name.Length;
+            data.ProcessLength = procName->Length;
+            data.OffsetProcess = sizeof(FileEvent);
+            data.OffsetPath = sizeof(FileEvent) + procName->Length;
+            KdPrint(("Offsets: %ld, %ld\n", data.OffsetProcess, data.OffsetPath));
+            data.Action = FileEventType::Delete;
+
+
+            BYTE* writePtr = (BYTE*)evt + sizeof(Event<FileEvent>);
+            memcpy(writePtr, procName->Buffer, procName->Length);
+            writePtr += procName->Length;
+            memcpy(writePtr, NameInfo->Name.Buffer, NameInfo->Name.Length);
+            KdPrint(("Offsets: %d, %d\n", data.OffsetProcess, data.OffsetPath));
+            PushEvent(&evt->Entry, &g_Struct.EventsHead, g_Struct.EventsMutex, g_Struct.EventCount);
+            FltReleaseFileNameInformation(NameInfo);
+            ExFreePool(procName);
+        }
+        else
+        {
+            KdPrint(("fsmon::PreCreate() --> Did not find monitored pid()\n"));
+            ExFreePool(procName);
+        }
+        
+        
     }
     return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 
 
 
-// WE ADD CALLBACKS FOR THE 2 MAJOR FUNCTION CODES INVOLVED IN THE DELETION OF FILES
-CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
-    {IRP_MJ_CREATE, 0, MJ_CreateCallback, nullptr},
-    {IRP_MJ_SET_INFORMATION, 0, DelProtectPreSetInformation, nullptr},
-    { IRP_MJ_OPERATION_END }
-};
+    
+    
 
-//
-//  This defines what we want to filter with FltMgr
-//
 
-CONST FLT_REGISTRATION FilterRegistration = {
 
-    sizeof(FLT_REGISTRATION),         //  Size
-    FLT_REGISTRATION_VERSION,           //  Version
-    0,                                  //  Flags
 
-    NULL,                               //  Context
-    Callbacks,                          //  Operation callbacks
 
-    DeleteProtectUnload,                           //  MiniFilterUnload
 
-    DeleteProtectInstanceSetup,                    //  InstanceSetup
-    DeleteProtectInstanceQueryTeardown,            //  InstanceQueryTeardown
-    DeleteProtectInstanceTeardownStart,            //  InstanceTeardownStart
-    DeleteProtectInstanceTeardownComplete,         //  InstanceTeardownComplete
 
-    NULL,                               //  GenerateFileName
-    NULL,                               //  GenerateDestinationFileName
-    NULL                                //  NormalizeNameComponent
-
-};
 
 
 _Use_decl_annotations_
-NTSTATUS __stdcall DeleteProtectInstanceSetup(
+NTSTATUS __stdcall fsmon::InstanceSetup(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_SETUP_FLAGS Flags,
     _In_ DEVICE_TYPE VolumeDeviceType,
@@ -380,7 +353,7 @@ Return Value:
 }
 
 _Use_decl_annotations_
-NTSTATUS __stdcall DeleteProtectInstanceQueryTeardown(
+NTSTATUS __stdcall fsmon::InstanceQueryTeardown(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_QUERY_TEARDOWN_FLAGS Flags
 )
@@ -422,7 +395,7 @@ Return Value:
 
 _Use_decl_annotations_
 VOID
-__stdcall DeleteProtectInstanceTeardownStart(
+__stdcall fsmon::InstanceTeardownStart(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
 )
@@ -456,7 +429,7 @@ Return Value:
 
 _Use_decl_annotations_
 VOID
-_stdcall DeleteProtectInstanceTeardownComplete(
+_stdcall fsmon::InstanceTeardownComplete(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
 )
@@ -531,7 +504,7 @@ Return Value:
 
     status = FltRegisterFilter(DriverObject,
         &FilterRegistration,
-        &gFilterHandle);
+        &g_Struct.gFilterHandle);
 
     FLT_ASSERT(NT_SUCCESS(status));
 
@@ -541,11 +514,11 @@ Return Value:
         //  Start filtering i/o
         //
 
-        status = FltStartFiltering(gFilterHandle);
+        status = FltStartFiltering(g_Struct.gFilterHandle);
 
         if (!NT_SUCCESS(status)) {
 
-            FltUnregisterFilter(gFilterHandle);
+            FltUnregisterFilter(g_Struct.gFilterHandle);
         }
     }
 
@@ -553,7 +526,7 @@ Return Value:
 }
 
 NTSTATUS
-__stdcall DeleteProtectUnload(
+__stdcall fsmon::Unload(
     _In_ FLT_FILTER_UNLOAD_FLAGS Flags
 )
 /*++
@@ -582,7 +555,7 @@ Return Value:
     PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
         ("DeleteProtect!DeleteProtectUnload: Entered\n"));
 
-    FltUnregisterFilter(gFilterHandle);
+    FltUnregisterFilter(g_Struct.gFilterHandle);
 
     return STATUS_SUCCESS;
 }

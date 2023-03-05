@@ -29,6 +29,7 @@ DriverEntry(
     // Bools
     bool SymLinkCreated =           FALSE;
     bool ProcessCallbacks =         FALSE;
+    bool FileFilter =               FALSE;
     
 
 
@@ -44,6 +45,18 @@ DriverEntry(
 
     do
     {
+        // Filter Driver Registration
+        status = FltRegisterFilter(DriverObject, &FilterRegistration, &g_Struct.gFilterHandle);
+        FLT_ASSERT(NT_SUCCESS(status));
+        if (NT_SUCCESS(status)) {
+            status = FltStartFiltering(g_Struct.gFilterHandle);
+            FileFilter = true;
+            if (!NT_SUCCESS(status)) {
+                break;
+            }
+        }
+
+
         status = IoCreateDevice(DriverObject, 0, &devName, FILE_DEVICE_UNKNOWN, 0, FALSE, &DeviceObject);
         if (!NT_SUCCESS(status)) {
             KdPrint(("DriverEntry: Failed to create device (0x%08X)\n", status));
@@ -75,6 +88,10 @@ DriverEntry(
     // Cleanup upon failure
     if (!NT_SUCCESS(status))
     {
+        if (FileFilter)
+        {
+            FltUnregisterFilter(g_Struct.gFilterHandle);
+        }
         
         if (ProcessCallbacks)
         {

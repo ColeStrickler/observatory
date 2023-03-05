@@ -80,10 +80,18 @@ json eventparser::ParseFileEvent(Event<FileEvent>* fileEvent)
 {
 	json retData;
 	auto& data = fileEvent->Data;
+
+
+	std::wstring wPath = std::wstring((wchar_t*)((uintptr_t)&fileEvent->Data + data.OffsetPath), data.PathLength / 2);
+	std::wstring wProc = std::wstring((wchar_t*)((uintptr_t)&fileEvent->Data + data.OffsetProcess), data.ProcessLength / 2);
+	std::string Path = WstringToString(wPath);
+	std::string Proc = WstringToString(wProc);
+	
+
 	retData["Type"] = "ParseFileEvent";
 	retData["Timestamp"] = DisplayTime(data.Timestamp);
-	retData["DataPath"] = std::string((char*)(fileEvent + data.OffsetPath), data.PathLength);
-	retData["Process"] = std::string((char*)(fileEvent + data.OffsetProcess), data.ProcessLength);
+	retData["DataPath"] = Path;
+	retData["Process"] = Proc;
 	switch (data.Action)
 	{
 	case FileEventType::Read:
@@ -106,6 +114,7 @@ json eventparser::ParseFileEvent(Event<FileEvent>* fileEvent)
 
 	case FileEventType::Delete:
 	{
+		printf("Got FileEvent! --> Delete\n");
 		retData["Action"] = "Delete";
 		break;
 	}
@@ -249,7 +258,7 @@ json eventparser::EventToJson(PlEntry* pEvent)
 
 	case EventType::FileEvent:
 	{
-		auto evt = (Event<FileEvent>*)(pEvent);
+		auto evt = CONTAINING_RECORD(*pEvent, Event<FileEvent>, Entry);
 		return eventparser::ParseFileEvent(evt);
 	}
 

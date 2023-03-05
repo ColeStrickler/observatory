@@ -335,9 +335,11 @@ void DriverEventConsumerThread(manager* mgr)
 				{
 					case EventType::FileEvent:
 					{
-						auto evt = new Event<FileEvent>();
 						auto fe = (FileEvent*)buf;
-						memcpy(&evt->Data, fe, sizeof(FileEvent));
+						size_t allocSize = sizeof(Event<FileEvent>) + (fe->Size - sizeof(FileEvent));
+						auto evt = (Event<FileEvent>*)new BYTE[allocSize];
+						memset(evt, 0x00, allocSize);
+						memcpy(&evt->Data, buf, fe->Size);
 						RAII::MutexLock Lock(hMutex);
 						PushEntry(g_Struct.ReadEvents, &evt->Entry);
 						break;
@@ -419,7 +421,6 @@ void DriverEventConsumerThread(manager* mgr)
 					break;
 
 				}
-				printf("PUSHED ENTRY\n");
 				buf += header->Size;
 				count -= header->Size;
 			}

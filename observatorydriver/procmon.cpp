@@ -4,85 +4,7 @@
 #pragma warning(disable: 4701)
 
 extern Globals g_Struct;
-
-static QUERY_INFO_PROCESS ZwQueryInformationProcess;
-
-
-NTSTATUS
-GetProcessImageName(
-    PEPROCESS eProcess,
-    PUNICODE_STRING* ProcessImageName
-)
-{
-    NTSTATUS status = STATUS_UNSUCCESSFUL;
-    UINT32 returnedLength;
-    HANDLE hProcess = NULL;
-
-    PAGED_CODE(); // this eliminates the possibility of the IDLE Thread/Process
-
-    if (eProcess == NULL)
-    {
-        return STATUS_INVALID_PARAMETER_1;
-    }
-
-    status = ObOpenObjectByPointer(eProcess,
-        0, NULL, 0, 0, KernelMode, &hProcess);
-    if (!NT_SUCCESS(status))
-    {
-        DbgPrint("ObOpenObjectByPointer Failed: %08x\n", status);
-        return status;
-    }
-
-    if (ZwQueryInformationProcess == NULL)
-    {
-        UNICODE_STRING routineName = RTL_CONSTANT_STRING(L"ZwQueryInformationProcess");
-
-        ZwQueryInformationProcess =
-            (QUERY_INFO_PROCESS)MmGetSystemRoutineAddress(&routineName);
-
-        if (ZwQueryInformationProcess == NULL)
-        {
-            DbgPrint("Cannot resolve ZwQueryInformationProcess\n");
-            status = STATUS_UNSUCCESSFUL;
-            goto cleanUp;
-        }
-    }
-
-    /* Query the actual size of the process path */
-    status = ZwQueryInformationProcess(hProcess,
-        ProcessImageFileName,
-        NULL, // buffer
-        0,    // buffer size
-        &returnedLength);
-
-    if (STATUS_INFO_LENGTH_MISMATCH != status) {
-        DbgPrint("ZwQueryInformationProcess status = %x\n", status);
-        goto cleanUp;
-    }
-
-    *ProcessImageName = (PUNICODE_STRING)ExAllocatePoolWithTag(NonPagedPool, returnedLength, DRIVER_TAG);
-
-    if (ProcessImageName == NULL)
-    {
-        status = STATUS_INSUFFICIENT_RESOURCES;
-        goto cleanUp;
-    }
-
-    /* Retrieve the process path from the handle to the process */
-    status = ZwQueryInformationProcess(hProcess,
-        ProcessImageFileName,
-        *ProcessImageName,
-        returnedLength,
-        &returnedLength);
-
-    if (!NT_SUCCESS(status)) ExFreePool(*ProcessImageName);
-
-cleanUp:
-
-    ZwClose(hProcess);
-
-    return status;
-}
+static QUERY_INFO_PROCESS ZwQueryInformationProcess = nullptr;;
 
 
 
@@ -110,20 +32,11 @@ bool procmon::CheckIfMonitoredPID(LIST_ENTRY* MonitoredFileEntry, ULONG PID, Fas
 
 void procmon::OnProcessNotify(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NOTIFY_INFO CreateInfo)
 {
-    if (CreateInfo) {
-        if (CreateInfo->FileOpenNameAvailable)
-        {
-            KdPrint(("%wZ\n", CreateInfo->ImageFileName));
-        }
-    }
-    
-    
     UNREFERENCED_PARAMETER(Process);
 
     // If a monitored file has not  been given to the driver, there is nothing to do
     if (IsListEmpty(&g_Struct.MonitoredFiles))
     {
-        KdPrint(("No monitored files. No work to do.\n"));
         return;
     }
 
@@ -138,29 +51,25 @@ void procmon::OnProcessNotify(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NO
                 // We can probably optimize this locking scheme
                 AutoLock<FastMutex> lock(g_Struct.MonitoredFilesMutex);
                 MonitoredFile* mf_struct = CONTAINING_RECORD(g_Struct.MonitoredFiles.Flink, MonitoredFile, Entry);
+                // PID will be set to zero for the initial process, we will set the pid of the structure properly and then return for the initial monitored file
                 if (mf_struct->PID == 0)
                 {
                     if (!RtlCompareUnicodeString(&mf_struct->FilePath, CreateInfo->ImageFileName, TRUE))
                     {
-                        KdPrint(("Found initial monitored file. Setting PID.\n"));
                         mf_struct->PID = HandleToULong(ProcessId);
                         return;
                     }
-                    KdPrint(("Wrong proc\n"));
                     return;
                 }
 
                 
                 while (true)
                 {
-                    KdPrint(("Comparing %wZ vs. %wZ\n", mf_struct->FilePath, CreateInfo->ImageFileName));
                     if (mf_struct->PID == HandleToULong(CreateInfo->ParentProcessId))
                     {
-                        KdPrint(("Allocating events..\n"));
                         auto new_monitored_file = (MonitoredFile*)ExAllocatePoolWithTag(NonPagedPool, sizeof(MonitoredFile), DRIVER_TAG);
                         if (new_monitored_file == nullptr)
                         {
-                            KdPrint(("allocation error. returning..\n"));
                             return;
                         }
 
@@ -168,18 +77,18 @@ void procmon::OnProcessNotify(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NO
                         new_monitored_file->PID = HandleToULong(ProcessId);
                         // we have to destroy the lock here to prevent a deadlock
                         PushMonitoredFile(&new_monitored_file->Entry, &g_Struct.MonitoredFiles, g_Struct.MonitoredFilesCount);
-                        KdPrint(("Pushed monitored file.\n"));
 
 
                         PEPROCESS PeParentProc = nullptr;
                         NTSTATUS status = PsLookupProcessByProcessId(CreateInfo->ParentProcessId, &PeParentProc);
                         PUNICODE_STRING parent_proc_name = nullptr;
                         
-                        KdPrint(("Attempting to get Parent ProcName\n"));
                         if (NT_SUCCESS(status)) {
-                            status = GetProcessImageName(PeParentProc, &parent_proc_name);
-                            if (NT_SUCCESS(status)) {
-                                KdPrint(("Got parent process name : %wZ\n", parent_proc_name));
+                            status = helpers::GetProcessImageName(PeParentProc, &parent_proc_name);
+                            if (!NT_SUCCESS(status))
+                            {
+                                KdPrint(("Unable to get Parent Process name!\n"));
+                                break;
                             }
                         }
                         
@@ -225,7 +134,6 @@ void procmon::OnProcessNotify(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NO
                             data.OffsetParentName = 0;
                         }
                         PushEvent(&new_event->Entry, &g_Struct.EventsHead, g_Struct.EventsMutex, g_Struct.EventCount);
-                        KdPrint(("Just pushed event!\n"));
                         
                         found_pid = TRUE;
                         break;
@@ -234,12 +142,10 @@ void procmon::OnProcessNotify(PEPROCESS Process, HANDLE ProcessId, PPS_CREATE_NO
                     LIST_ENTRY* next = mf_struct->Entry.Flink;
                     if (next == &g_Struct.MonitoredFiles)
                     {
-                        KdPrint(("found head. BREAKING!\n"));
                         break;
                     }
                     mf_struct = CONTAINING_RECORD(next, MonitoredFile, Entry);
                 }
-                KdPrint(("\nbreaking  out process handler..\n"));
                 break;
             }
         }
