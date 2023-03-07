@@ -92,6 +92,7 @@ json eventparser::ParseFileEvent(Event<FileEvent>* fileEvent)
 	retData["Timestamp"] = DisplayTime(data.Timestamp);
 	retData["DataPath"] = Path;
 	retData["Process"] = Proc;
+	retData["ProcessId"] = data.Pid;
 	switch (data.Action)
 	{
 	case FileEventType::Read:
@@ -114,7 +115,6 @@ json eventparser::ParseFileEvent(Event<FileEvent>* fileEvent)
 
 	case FileEventType::Delete:
 	{
-		printf("Got FileEvent! --> Delete\n");
 		retData["Action"] = "Delete";
 		break;
 	}

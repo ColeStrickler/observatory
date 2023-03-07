@@ -16,9 +16,17 @@ namespace fsmon
         _Outptr_result_maybenull_ PVOID* CompletionContext
     );
 
+
+    FLT_PREOP_CALLBACK_STATUS __stdcall PreSetInformation(
+        _Inout_ PFLT_CALLBACK_DATA Data,
+        _In_ PCFLT_RELATED_OBJECTS FltObjects,
+        PVOID*
+    );
     
 
 
+    // Helpers
+    
 
 
 
@@ -62,7 +70,7 @@ namespace fsmon
 // WE ADD CALLBACKS FOR THE 2 MAJOR FUNCTION CODES INVOLVED IN THE DELETION OF FILES
 CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
     {IRP_MJ_CREATE, 0, fsmon::PreCreate, nullptr},
-    {IRP_MJ_SET_INFORMATION, 0, 0, nullptr},
+    {IRP_MJ_SET_INFORMATION, 0, fsmon::PreSetInformation, nullptr},
     { IRP_MJ_OPERATION_END }
 };
 

@@ -1,4 +1,5 @@
 #include "infrastructure.h"
+#include "fsmon.h"
 #pragma warning(disable: 4311)
 #pragma warning(disable: 4302)
 
@@ -270,11 +271,7 @@ NTSTATUS ReadEvents(PDEVICE_OBJECT, PIRP Irp)
         {
             if (IsListEmpty(&g_Struct.EventsHead))
             {
-                KdPrint(("Events is empty on Read.\n"));
                 break;
-            }
-            else {
-                KdPrint(("Copying over events...\n"));
             }
 
             auto entry = RemoveHeadList(&g_Struct.EventsHead);

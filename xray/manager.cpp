@@ -466,6 +466,7 @@ manager::manager(char* _Server) : Server(_Server), hFile(INVALID_HANDLE_VALUE), 
 
 
 	const char* file = "\\??\\C:\\Windows\\System32\\cmd.exe";
+	//const char* file = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 	RAII::NewBuffer buf(strlen(file) + 1);
 	BYTE* buffer = buf.Get();
 

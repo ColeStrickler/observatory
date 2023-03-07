@@ -19,9 +19,12 @@ Environment:
 extern Globals g_Struct;
 static QUERY_INFO_PROCESS ZwQueryInformationProcess = nullptr;
 
-
-
-
+/*
+static USHORT GetFileCreationDisposition(ULONG Create_Options)
+{
+    return (Create_Options >> 24) & 0xff;
+};
+*/
 
 
 
@@ -92,7 +95,7 @@ EXTERN_C_END
 //  operation registration
 //
 _Use_decl_annotations_
-FLT_PREOP_CALLBACK_STATUS __stdcall DelProtectPreSetInformation(
+FLT_PREOP_CALLBACK_STATUS __stdcall fsmon::PreSetInformation(
     _Inout_ PFLT_CALLBACK_DATA Data,
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     PVOID*
@@ -127,17 +130,29 @@ FLT_PREOP_CALLBACK_STATUS __stdcall DelProtectPreSetInformation(
     }
 
     auto size = 1000;
-    auto procName = (UNICODE_STRING*)ExAllocatePool(PagedPool, size);
-    if (procName) {
-        do {
+    auto procName = (UNICODE_STRING*)ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
+    if (procName) 
+    {
+        auto pid = HandleToUlong(hProc);
+
+        if (procmon::CheckIfMonitoredPID(&g_Struct.MonitoredFiles, pid, g_Struct.MonitoredFilesMutex))
+        {
             memset(procName, 0, size);
+            if (ZwQueryInformationProcess == nullptr)
+            {
+                if (!helpers::ResolveSystemFunction((void**)&ZwQueryInformationProcess, L"ZwQueryInformationProcess"))
+                {
+                    KdPrint(("fsmon::PreSetInformation() --> Unable to resolve ZwQueryInformationProcess\n"));
+                    return FLT_PREOP_SUCCESS_NO_CALLBACK;
+                }
+            }
             status = ZwQueryInformationProcess(hProc, ProcessImageFileName, procName, size - sizeof(WCHAR), nullptr);
             if (!NT_SUCCESS(status)) {
                 if (hProc) {
                     ZwClose(hProc);
                 }
                 ExFreePool(procName);
-                break;
+                return FLT_PREOP_SUCCESS_NO_CALLBACK;
             }
 
             PFLT_FILE_NAME_INFORMATION NameInfo;
@@ -147,28 +162,44 @@ FLT_PREOP_CALLBACK_STATUS __stdcall DelProtectPreSetInformation(
                     ZwClose(hProc);
                 }
                 ExFreePool(procName);
-                break;
+                return FLT_PREOP_SUCCESS_NO_CALLBACK;
             }
 
-            if (wcsstr(procName->Buffer, L"\\System32\\cmd.exe") || wcsstr(procName->Buffer, L"\\SysWOW64\\cmd.exe")) {
-                // block if match
-                Data->IoStatus.Status = STATUS_ACCESS_DENIED;
-                KdPrint(("Blocked deletion of %wZ by cmd.exe\n", NameInfo->Name));
-                if (hProc) {
-                    ZwClose(hProc);
-                }
+
+
+            auto allocSize = sizeof(Event<FileEvent>) + NameInfo->Name.Length + procName->Length;
+            auto evt = (Event<FileEvent>*)ExAllocatePoolWithTag(NonPagedPool, allocSize, DRIVER_TAG);
+            if (!evt)
+            {
                 FltReleaseFileNameInformation(NameInfo);
-                return FLT_PREOP_COMPLETE;
+                ExFreePool(procName);
+                return FLT_PREOP_SUCCESS_NO_CALLBACK;
             }
+
+            FileEvent& data = evt->Data;
+
+
+            data.Type = EventType::FileEvent;
+            data.Size = sizeof(FileEvent) + NameInfo->Name.Length + procName->Length;
+            KeQuerySystemTime(&data.Timestamp);
+            data.PathLength = NameInfo->Name.Length;
+            data.ProcessLength = procName->Length;
+            data.Pid = pid;
+            data.OffsetProcess = sizeof(FileEvent);
+            data.OffsetPath = sizeof(FileEvent) + procName->Length;
+            data.Action = FileEventType::Delete;
+
+
+            BYTE* writePtr = (BYTE*)evt + sizeof(Event<FileEvent>);
+            memcpy(writePtr, procName->Buffer, procName->Length);
+            writePtr += procName->Length;
+            memcpy(writePtr, NameInfo->Name.Buffer, NameInfo->Name.Length);
+            PushEvent(&evt->Entry, &g_Struct.EventsHead, g_Struct.EventsMutex, g_Struct.EventCount);
+
             ExFreePool(procName);
-            FltReleaseFileNameInformation(NameInfo);
-            // TELL FILTER MANAGER TO NOT CONTINUE ON WITH THE REQUEST
-            return FLT_PREOP_COMPLETE;
-
-
-        } while (true);
-
-
+            FltReleaseFileNameInformation(NameInfo);    
+        }
+ 
     }
     if (hProc) {
         ZwClose(hProc);
@@ -204,10 +235,8 @@ FLT_PREOP_CALLBACK_STATUS __stdcall fsmon::PreCreate(
     
 
     const auto& params = Data->Iopb->Parameters.Create;
-
-    if (params.Options & FILE_DELETE_ON_CLOSE) {
-
-        auto size = 1000;
+    
+    auto size = 1000;
         auto procName = (UNICODE_STRING*)ExAllocatePoolWithTag(NonPagedPool, size, DRIVER_TAG);
         if (procName == nullptr) {
             KdPrint(("fsmon::PreCreate() --> could not allocate pool\n"));
@@ -226,6 +255,8 @@ FLT_PREOP_CALLBACK_STATUS __stdcall fsmon::PreCreate(
             }
         }
         
+     
+        
         auto status = ZwQueryInformationProcess(NtCurrentProcess(), ProcessImageFileName, procName, size - sizeof(WCHAR), nullptr);
         
         if (!NT_SUCCESS(status))
@@ -237,61 +268,71 @@ FLT_PREOP_CALLBACK_STATUS __stdcall fsmon::PreCreate(
 
 
         ULONG pid = HandleToUlong(PsGetCurrentProcessId());
-        KdPrint(("Got PID: %ld\n", pid));
         if (procmon::CheckIfMonitoredPID(g_Struct.MonitoredFiles.Flink, pid, g_Struct.MonitoredFilesMutex))
         {
-            KdPrint(("Got file event for monitored PID\n"));
-            PFLT_FILE_NAME_INFORMATION NameInfo;
-            status = FltGetFileNameInformation(Data, FLT_FILE_NAME_OPENED, &NameInfo);
-            if (!NT_SUCCESS(status))
+            if (params.Options & FILE_NON_DIRECTORY_FILE)
             {
-                ExFreePool(procName);
-                return FLT_PREOP_SUCCESS_NO_CALLBACK;
-            }
+                PFLT_FILE_NAME_INFORMATION NameInfo;
+                status = FltGetFileNameInformation(Data, FLT_FILE_NAME_OPENED, &NameInfo);
+                if (!NT_SUCCESS(status))
+                {
+                    ExFreePool(procName);
+                    return FLT_PREOP_SUCCESS_NO_CALLBACK;
+                }
 
-            // in procmon we gave two extra bytes in the allocation, but they seem unneeded
-            auto allocSize = sizeof(Event<FileEvent>) + NameInfo->Name.Length + procName->Length;
+                // in procmon we gave two extra bytes in the allocation, but they seem unneeded
+                auto allocSize = sizeof(Event<FileEvent>) + NameInfo->Name.Length + procName->Length;
 
-            auto evt = (Event<FileEvent>*)ExAllocatePoolWithTag(NonPagedPool, allocSize, DRIVER_TAG);
-            if (!evt)
-            {
+                auto evt = (Event<FileEvent>*)ExAllocatePoolWithTag(NonPagedPool, allocSize, DRIVER_TAG);
+                if (!evt)
+                {
+                    FltReleaseFileNameInformation(NameInfo);
+                    ExFreePool(procName);
+                    return FLT_PREOP_SUCCESS_NO_CALLBACK;
+                }
+
+                FileEvent& data = evt->Data;
+
+
+                data.Type = EventType::FileEvent;
+                data.Size = sizeof(FileEvent) + NameInfo->Name.Length + procName->Length;
+                KeQuerySystemTime(&data.Timestamp);
+                data.PathLength = NameInfo->Name.Length;
+                data.ProcessLength = procName->Length;
+                data.Pid = pid;
+                data.OffsetProcess = sizeof(FileEvent);
+                data.OffsetPath = sizeof(FileEvent) + procName->Length;
+                
+               // USHORT Mask = FILE_SUPERSEDED | FILE_CREATE | FILE_OVERWRITE | FILE_OVERWRITE_IF;
+                //ULONG Disposition = GetFileCreationDisposition(Data->Iopb->Parameters.Create.Options);
+                KdPrint(("%wZ -> %wZ Mask: 0x%x\n", procName, NameInfo->Name, Data->Iopb->Parameters.Create.SecurityContext->DesiredAccess));
+                if (params.Options & FILE_DELETE_ON_CLOSE)
+                {
+                    data.Action = FileEventType::Delete;
+                }
+                else if (Data->Iopb->Parameters.Create.SecurityContext->DesiredAccess & (WRITE_DAC | GENERIC_WRITE | WRITE_OWNER | FILE_APPEND_DATA | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES\
+                    | FILE_WRITE_EA))
+                {
+                    data.Action = FileEventType::Write;
+                }
+                else
+                {
+                    data.Action = FileEventType::Read;
+                }
+
+
+                BYTE* writePtr = (BYTE*)evt + sizeof(Event<FileEvent>);
+                memcpy(writePtr, procName->Buffer, procName->Length);
+                writePtr += procName->Length;
+                memcpy(writePtr, NameInfo->Name.Buffer, NameInfo->Name.Length);
+                PushEvent(&evt->Entry, &g_Struct.EventsHead, g_Struct.EventsMutex, g_Struct.EventCount);
                 FltReleaseFileNameInformation(NameInfo);
                 ExFreePool(procName);
-                return FLT_PREOP_SUCCESS_NO_CALLBACK;
             }
-
-            FileEvent& data = evt->Data;
-
-
-            data.Type = EventType::FileEvent;
-            data.Size = sizeof(FileEvent) + NameInfo->Name.Length + procName->Length;
-            KdPrint(("Size: %d\n", data.Size));
-            KeQuerySystemTime(&data.Timestamp);
-            data.PathLength = NameInfo->Name.Length;
-            data.ProcessLength = procName->Length;
-            data.OffsetProcess = sizeof(FileEvent);
-            data.OffsetPath = sizeof(FileEvent) + procName->Length;
-            KdPrint(("Offsets: %ld, %ld\n", data.OffsetProcess, data.OffsetPath));
-            data.Action = FileEventType::Delete;
-
-
-            BYTE* writePtr = (BYTE*)evt + sizeof(Event<FileEvent>);
-            memcpy(writePtr, procName->Buffer, procName->Length);
-            writePtr += procName->Length;
-            memcpy(writePtr, NameInfo->Name.Buffer, NameInfo->Name.Length);
-            KdPrint(("Offsets: %d, %d\n", data.OffsetProcess, data.OffsetPath));
-            PushEvent(&evt->Entry, &g_Struct.EventsHead, g_Struct.EventsMutex, g_Struct.EventCount);
-            FltReleaseFileNameInformation(NameInfo);
-            ExFreePool(procName);
+            
         }
-        else
-        {
-            KdPrint(("fsmon::PreCreate() --> Did not find monitored pid()\n"));
-            ExFreePool(procName);
-        }
-        
-        
-    }
+
+
     return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 

@@ -50,6 +50,7 @@ struct FileParseEvent : EventHeader
 struct FileEvent : EventHeader
 { 
 	FileEventType Action;
+	DWORD Pid;
 	DWORD OffsetPath;
 	DWORD PathLength;
 	DWORD OffsetProcess;
