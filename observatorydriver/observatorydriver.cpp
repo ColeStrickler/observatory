@@ -31,7 +31,7 @@ DriverEntry(
     bool SymLinkCreated =           FALSE;
     bool ProcessCallbacks =         FALSE;
     bool FileFilter =               FALSE;
-    
+    bool RegistryCallbacks =        FALSE;
 
 
 
@@ -57,7 +57,6 @@ DriverEntry(
             }
         }
 
-
         status = IoCreateDevice(DriverObject, 0, &devName, FILE_DEVICE_UNKNOWN, 0, FALSE, &DeviceObject);
         if (!NT_SUCCESS(status)) {
             KdPrint(("DriverEntry: Failed to create device (0x%08X)\n", status));
@@ -81,6 +80,13 @@ DriverEntry(
         }
         ProcessCallbacks = true;
 
+        UNICODE_STRING altitude = RTL_CONSTANT_STRING(L"12345.6789");
+        status = CmRegisterCallbackEx(regmon::OnRegistryNotify, &altitude, DriverObject, nullptr, &g_Struct.RegCookie, nullptr);
+        if (!NT_SUCCESS(status)) {
+            KdPrint(("Failed to register for registry notifications!\n"));
+            break;
+        }
+        RegistryCallbacks = true;
 
 
 
@@ -130,6 +136,7 @@ void UnloadObservatoryDriver(PDRIVER_OBJECT DriverObject)
     IoDeleteSymbolicLink(&symLink);
     IoDeleteDevice(DriverObject->DeviceObject);
     PsSetCreateProcessNotifyRoutineEx(procmon::OnProcessNotify, TRUE);
+    CmUnRegisterCallback(g_Struct.RegCookie);
 
     while (!IsListEmpty(&g_Struct.EventsHead))
     {
@@ -262,6 +269,7 @@ NTSTATUS ReadEvents(PDEVICE_OBJECT, PIRP Irp)
     auto buffer = (UCHAR*)MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
     if (!buffer) 
     {
+        KdPrint(("ReadEvents-->Insufficient Resources!\n"));
         status = STATUS_INSUFFICIENT_RESOURCES;
     }
     else
@@ -277,9 +285,13 @@ NTSTATUS ReadEvents(PDEVICE_OBJECT, PIRP Irp)
             auto entry = RemoveHeadList(&g_Struct.EventsHead);
             auto info = CONTAINING_RECORD(entry, Event<EventHeader>, Entry);
             auto size = info->Data.Size;
-
+            if (info->Data.Type == EventType::RegistryEvent)
+            {
+                KdPrint(("reading off registry event\n"));
+            }
             if (len < size)
             {
+                KdPrint(("ReadEvents() --> read too much, placing back\n"));
                 // user buffer is too full to take another, put item back
                 InsertHeadList(&g_Struct.EventsHead, entry);
                 break;

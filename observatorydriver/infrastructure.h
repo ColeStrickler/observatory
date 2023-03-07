@@ -5,6 +5,7 @@
 #include "KernelRaiiMgmt.h"
 #include "providers.h"
 #include "fsmon.h"
+#include "regmon.h"
 
 // TYPEDEFS
 typedef UINT32 DWORD;
@@ -16,7 +17,7 @@ typedef unsigned char BYTE;
 typedef struct Globals
 {
 	PFLT_FILTER gFilterHandle;
-
+	LARGE_INTEGER RegCookie;
 
 
 	FastMutex					EventsMutex;
@@ -141,11 +142,19 @@ struct RemoteThreadEvent : ThreadEvent
 struct RegistryEvent : EventHeader
 {
 	REG_NOTIFY_CLASS Action;
-	DWORD OffsetValue;
-	DWORD ValueLength;
+	DWORD Pid;
+	DWORD OffsetProcessName;
+	DWORD ProcessNameLength;
+	DWORD OffsetDataValue;
+	DWORD DataLength;
+	DWORD DataType;
+	DWORD OffsetDataName;
+	DWORD DataNameLength;
 	DWORD OffsetRegistryPath;
 	DWORD RegistryPathLength;
 };
+
+
 
 struct ObjectCallbackEvent : EventHeader
 {

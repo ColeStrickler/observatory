@@ -292,7 +292,7 @@ void API_sendThread(manager* mgr)
 
 		json parsed = eventparser::EventToJson(&curr);
 		printf(parsed.dump().c_str());
-		// now send the data
+		printf("\n\n");
 
 		Url endpoint = std::string("http://") + mgr->GetApiEndpoint();
 		Response r = Post(endpoint, Body{ parsed.dump() }, Header{ {"Content-Type", "application/json"} });
@@ -399,9 +399,11 @@ void DriverEventConsumerThread(manager* mgr)
 
 					case EventType::RegistryEvent:
 					{
-						auto evt = new Event<RegistryEvent>();
 						auto re = (RegistryEvent*)buf;
-						memcpy(&evt->Data, re, sizeof(RegistryEvent));
+						size_t allocSize = sizeof(Event<RegistryEvent>) + (re->Size - sizeof(RegistryEvent));
+						auto evt = (Event<RegistryEvent>*)new BYTE[allocSize];
+						memset(evt, 0x00, allocSize);
+						memcpy(&evt->Data, buf, re->Size);
 						RAII::MutexLock Lock(hMutex);
 						PushEntry(g_Struct.ReadEvents, &evt->Entry);
 						break;

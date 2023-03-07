@@ -215,15 +215,147 @@ json eventparser::ParseRegistryEvent(Event<RegistryEvent>* registryEvent)
 
 	retData["Type"] = "ParseRegistryEvent";
 	retData["Timestamp"] = DisplayTime(data.Timestamp);
-	retData["Operation"] = REG_NOTIFY_CLASS_MAPPINGS[data.Action];
-	retData["Registry Path"] = std::string((char*)(registryEvent + data.OffsetRegistryPath), data.RegistryPathLength);
+	std::wstring wProcess = std::wstring((wchar_t*)((uintptr_t)&registryEvent->Data + data.OffsetProcessName), data.ProcessNameLength / 2);
 
-	if (data.ValueLength)
+	std::string Process = WstringToString(wProcess);
+
+
+	retData["ProcessId"] = data.Pid;
+	retData["Process"] = Process;
+	
+
+	switch (data.Action)
 	{
-		retData["Value"] = std::string((char*)(registryEvent + data.OffsetValue), data.ValueLength);
-	}
-	else {
-		retData["Value"] = "N/A";
+		case RegNtPreCreateKey:
+		{
+			retData["Action"] = "CreateKey";
+			std::wstring wKeyName = std::wstring((wchar_t*)((uintptr_t)&registryEvent->Data + data.OffsetRegistryPath), data.RegistryPathLength / 2); // no divide by two because it isnt from a UNICODE_STRING
+			std::string KeyName = WstringToString(wKeyName);
+			retData["RegistryKey"] = KeyName;
+			break;
+		}
+
+		case RegNtPreSetInformationKey:
+		{
+			retData["Action"] = "SetInformationKey";
+			std::wstring wKeyName = std::wstring((wchar_t*)((uintptr_t)&registryEvent->Data + data.OffsetRegistryPath), data.RegistryPathLength / 2);
+			std::string KeyName = WstringToString(wKeyName);
+			retData["RegistryKey"] = KeyName;
+
+
+			switch (*(DWORD*)((uintptr_t)&registryEvent->Data + data.OffsetDataValue))
+			{
+				case 0:
+				{
+					retData["KeySetInformationClass"] = "KeyWriteTimeInformation";
+					break;
+				}
+
+				case 1:
+				{
+					retData["KeySetInformationClass"] = "KeyWow64FlagsInformation";
+				}
+
+				case 2:
+				{
+					retData["KeySetInformationClass"] = "KeyControlFlagsInformation";
+				}
+
+				case 3:
+				{
+					retData["KeySetInformationClass"] = "KeySetVirtualizationInformation";
+				}
+
+				case 4:
+				{
+					retData["KeySetInformationClass"] = "KeySetDebugInformation";
+				}
+
+				case 5:
+				{
+					retData["KeySetInformationClass"] = "KeySetHandleTagsInformation";
+				}
+
+				case 6:
+				{
+					retData["KeySetInformationClass"] = "KeySetLayerInformation";
+				}
+
+				case 7:
+				{
+					retData["KeySetInformationClass"] = "KeySetInfoClass";
+				}
+				
+				default:
+					retData["KeySetInformationClass"] = "N/A";
+				
+			}
+			
+		}
+
+		case RegNtPreDeleteKey:
+		{
+			retData["Action"] = "DeleteKey";
+
+			std::wstring wKeyName = std::wstring(((wchar_t*)(uintptr_t)&registryEvent->Data + data.OffsetRegistryPath), data.RegistryPathLength / 2);
+			std::string KeyName = WstringToString(wKeyName);
+			retData["RegistryKey"] = KeyName;
+			break;
+		}
+
+		case RegNtPreDeleteValueKey:
+		{
+			retData["Action"] = "DeleteValueKey";
+			std::wstring wKeyName = std::wstring(((wchar_t*)(uintptr_t)&registryEvent->Data + data.OffsetRegistryPath), data.RegistryPathLength / 2);
+			std::string KeyName = WstringToString(wKeyName);
+			retData["RegistryKey"] = KeyName;
+			std::wstring wValName = std::wstring(((wchar_t*)(uintptr_t)&registryEvent->Data + data.OffsetDataName), data.DataNameLength / 2);
+			std::string ValName = WstringToString(wValName);
+			retData["ValueName"] = ValName;
+			break;
+		}
+
+		case RegNtPreSetValueKey:
+		{
+			retData["Action"] = "SetValueKey";
+			std::wstring wKeyName = std::wstring((wchar_t*)((uintptr_t)&registryEvent->Data + data.OffsetRegistryPath), data.RegistryPathLength / 2);
+			std::string KeyName = WstringToString(wKeyName);
+			retData["RegistryKey"] = KeyName;
+			std::wstring wValName = std::wstring((wchar_t*)((uintptr_t)&registryEvent->Data + data.OffsetDataName), data.DataNameLength / 2);
+			std::string ValName = WstringToString(wValName);
+			retData["ValueName"] = ValName;
+
+
+			switch (data.DataType)
+			{
+
+				case REG_SZ:
+				{
+					std::wstring wData = std::wstring(((wchar_t*)(uintptr_t)&registryEvent->Data + data.OffsetDataName), data.DataLength / 2);
+					std::string data = WstringToString(wData);
+					retData["Data"] = data;
+					break;
+				}
+
+				case REG_MULTI_SZ:
+				{
+
+					std::wstring wData = std::wstring(((wchar_t*)(uintptr_t)&registryEvent->Data + data.OffsetDataName), data.DataLength / 2);
+					std::string data = WstringToString(wData);
+					retData["Data"] = data;
+					break;
+				}
+
+				default:
+				{
+					retData["Data"] = BinaryToString((void*)((uintptr_t)&registryEvent->Data + data.OffsetDataName), data.DataLength);
+					break;
+				}
+			}
+		}
+
+		default:
+			break;
 	}
 
 	return retData;
@@ -294,7 +426,7 @@ json eventparser::EventToJson(PlEntry* pEvent)
 
 	case EventType::RegistryEvent:
 	{
-		auto evt = (Event<RegistryEvent>*)(pEvent);
+		auto evt = CONTAINING_RECORD(*pEvent, Event<RegistryEvent>, Entry);
 		return eventparser::ParseRegistryEvent(evt);
 	}
 

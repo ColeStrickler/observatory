@@ -27,7 +27,6 @@ bool helpers::ResolveSystemFunction(void** Function, const wchar_t* FuncName)
 
 NTSTATUS helpers::GetProcessImageName(PEPROCESS eProcess, PUNICODE_STRING* ProcessImageName)
 {
-    KdPrint(("GetProcessImageName()->Start\n"));
     NTSTATUS status = STATUS_UNSUCCESSFUL;
     UINT32 returnedLength;
     HANDLE hProcess = NULL;
@@ -36,6 +35,7 @@ NTSTATUS helpers::GetProcessImageName(PEPROCESS eProcess, PUNICODE_STRING* Proce
 
     if (eProcess == NULL)
     {
+        KdPrint(("helpers::GetProcessImageName() --> null EProcess\n"));
         return STATUS_INVALID_PARAMETER_1;
     }
 
@@ -43,6 +43,7 @@ NTSTATUS helpers::GetProcessImageName(PEPROCESS eProcess, PUNICODE_STRING* Proce
         0, NULL, 0, 0, KernelMode, &hProcess);
     if (!NT_SUCCESS(status))
     {
+        KdPrint(("helpers::GetProcessImageName() --> unable to open object pointer\n"));
         return status;
     }
 
@@ -64,6 +65,7 @@ NTSTATUS helpers::GetProcessImageName(PEPROCESS eProcess, PUNICODE_STRING* Proce
         &returnedLength);
 
     if (STATUS_INFO_LENGTH_MISMATCH != status) {
+        KdPrint(("helpers::GetProcessImageName() --> length mismatch\n"));
         goto cleanUp;
     }
 
@@ -71,6 +73,7 @@ NTSTATUS helpers::GetProcessImageName(PEPROCESS eProcess, PUNICODE_STRING* Proce
 
     if (ProcessImageName == NULL)
     {
+        KdPrint(("helpers::GetProcessImageName() --> insufficient resources\n"));
         status = STATUS_INSUFFICIENT_RESOURCES;
         goto cleanUp;
     }
@@ -82,11 +85,13 @@ NTSTATUS helpers::GetProcessImageName(PEPROCESS eProcess, PUNICODE_STRING* Proce
         returnedLength,
         &returnedLength);
 
-    if (!NT_SUCCESS(status)) ExFreePool(*ProcessImageName);
-
+    if (!NT_SUCCESS(status))
+    {
+        KdPrint(("helpers::GetProcessImageName() --> ZwQueryInformationProcess fail!\n"));
+        ExFreePool(*ProcessImageName);
+    }
 cleanUp:
 
     ZwClose(hProcess);
-    KdPrint(("GetProcessImageName()->Finish\n"));
     return status;
 }

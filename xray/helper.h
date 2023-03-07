@@ -7,3 +7,4 @@
 
 std::string DisplayTime(const LARGE_INTEGER& time);
 std::string WstringToString(std::wstring wstr);
+std::string BinaryToString(void* Tgt, DWORD Length);

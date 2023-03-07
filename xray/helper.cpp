@@ -1,5 +1,5 @@
 #include "helper.h"
-
+#pragma warning(disable: 4996)
 
 
 
@@ -19,5 +19,21 @@ std::string WstringToString(std::wstring wstr)
     RAII::NewBuffer strbuffer(len);
     sprintf_s((char*)strbuffer.Get(), len, "%ws", wstr.data());
     std::string ret = std::string((char*)strbuffer.Get());
+    return ret;
+}
+
+std::string BinaryToString(void* Tgt, DWORD Length)
+{
+    RAII::NewBuffer buf(Length);
+    BYTE* write_ptr = buf.Get();
+    BYTE* read_ptr = (BYTE*)Tgt;
+    for (DWORD i = 0; i < Length; i++)
+    {
+        sprintf((char*)write_ptr, "%02X", *read_ptr);
+
+        read_ptr += 1;
+        write_ptr += 1;
+    }
+    std::string ret((char*)buf.Get(), Length);
     return ret;
 }
